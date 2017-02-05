@@ -72,28 +72,34 @@ def draw_labeled_bboxes(img, labels):
     # Return the image
     return img
 
-def add_heat(bbox_list):
+def add_heat(bbox_list, size_factor, max_factor):
     global HEATMAP
 
     # Iterate through list of bboxes
     for box in bbox_list:
         # Add += 1 for all pixels inside each bbox
         # Assuming each "box" takes the form ((x1, y1), (x2, y2))
-        print("Adding heat for %s" % (box,))
-        HEATMAP[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
-        #HEATMAP[box[0][0]:box[1][0], box[0][1]:box[1][1]] += 1
+        #print("Adding heat for %s" % (box,))
+        # We add a different value depending on how large the window is
+        # larger windows we add less, smaller windows we add more
+        HEATMAP[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1 #max_factor - size_factor + 1
 
 def apply_threshold():
     global HEATMAP
 
     # Zero out pixels below the threshold
-    HEATMAP[HEATMAP <= HEATMAP_THRESH] = 0 # <=
-    # To prevent a runaway heatmap over multiple frames
-    #HEATMAP[HEATMAP > HEATMAP_THRESH] -= 1 # >
-    #HEATMAP[HEATMAP == threshold] = 1
+    HEATMAP[HEATMAP < HEATMAP_THRESH] = 0 # <=
+    
 
 def ground_heatmap():
-    HEATMAP[HEATMAP > HEATMAP_THRESH] = HEATMAP_THRESH
+    """
+    Lowers the values of all 'activated' parts of the heatmap
+    so that those values must be reaffirmed in the next frame
+    in order to be kept. In effect, this is establishing the
+    confidence
+    """
+    global HEATMAP
+    HEATMAP[HEATMAP > HEATMAP_THRESH] = HEATMAP_THRESH - 1
 
 def slide_window(img, x_start_stop=[None, None], y_start_stop=[None, None], 
                  xy_window=(64, 64), xy_overlap=(0.5, 0.5)):
@@ -188,31 +194,32 @@ def bin_spatial(img, size=(32, 32)):
 # Constants specific to hog
 ORIENT = 9
 PIX_PER_CELL = 8
-CELL_PER_BLOCK = 2
+CELL_PER_BLOCK = 3
 
 # Define a function to return HOG features and visualization
 def get_hog_features(img, vis=False, feature_vec=True):
+    hog_image = None
     if vis == True:
         features, hog_image = \
             hog(img, 
                 orientations=ORIENT, 
                 pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                 cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                visualise=True) #, feature_vector=False)
+                visualise=True)#, feature_vector=feature_vec)
         if DEBUG: plt.imshow(hog_image); plt.show()
-        return features
     else:      
         features = hog(img, 
                        orientations=ORIENT, 
                        pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                        cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                       visualise=False) #, feature_vector=feature_vec)
-        return features
+                       visualise=False)#, feature_vector=feature_vec)
+    if hog_image != None: plt.imshow(hog_image); plt.show()
+    return features, hog_image
 
-def extract_features(imgs, hog_plus=False,
+def extract_features(imgs, hog_plus=True, gray_hog=True,
                      spatial_size=(32, 32), hist_bins=32, hist_range=(0, 256)):
     # Create a list to append feature vectors to
-    features = []
+    set_features = []
     # Iterate through the list of images
     for file in imgs:
         # Read in each one by one
@@ -225,28 +232,49 @@ def extract_features(imgs, hog_plus=False,
             image = cv2.resize(image, (64, 64), 
                                fx=64/image.shape[1], fy=64/image.shape[0])
 
-        nongray_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        feature_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        hog_features = get_hog_features(feature_image,
-                                         vis=False, feature_vec=True)
+        color_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        if gray_hog:
+            feature_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)        
+            tot_hog_features, _ = get_hog_features(feature_image, 
+                                    vis=DEBUG, feature_vec=True)
 
+        else:
+            hog_channels = []
+            for channel in [0,1,2]:
+                feature_image = color_image[:,:,channel]
+                hog_features, hog_image = get_hog_features(feature_image,
+                                         vis=DEBUG, feature_vec=True)
+                hog_channels.append(hog_features)
+            tot_hog_features = np.concatenate(hog_channels)
+
+        all_features = (tot_hog_features,)
         spatial_features = []
         hist_features = []
         if hog_plus:
             # Apply bin_spatial() to get spatial color features
             if spatial_size: 
-                spatial_features = bin_spatial(nongray_image, size=spatial_size)
+                spatial_features = bin_spatial(color_image, size=spatial_size)
+                if spatial_features is not None:
+                    #print("Got spatial features!")
+                    all_features += (spatial_features,)
             # Apply channel_hist() also with a color space option now
             if hist_bins and hist_range: 
-                hist_features = channel_hist(nongray_image, 
+                hist_features = channel_hist(color_image, 
                                        nbins=hist_bins, 
                                        bins_range=hist_range)
                 hist_features = hist_features[0]
-        
-        features.append(np.concatenate((spatial_features, hist_features, hog_features)))
+                if hist_features is not None:
+                    #print("Got channel histogram!")
+                    all_features += (hist_features,)
+       
+        img_features = np.concatenate(all_features)
+        if len(imgs) == 1: 
+            return img_features
+        else:
+            set_features.append(img_features)
 
     # Return list of feature vectors
-    return features
+    return set_features
 
 # Define a function to return some characteristics of the dataset 
 def data_look(car_list, notcar_list):
@@ -297,7 +325,8 @@ def get_training_specs(cars, notcars):
     notcar_features = extract_features(notcars)
     print('Car features: %s, Not-cars features: %s'
           % (len(car_features), len(notcar_features)))
-
+    print('Example Car Features: %s' % (car_features[0],))
+    print('Example non-Car Features: %s' % (notcar_features[0],))
     # Create an array stack of feature vectors
     X = np.vstack((car_features, notcar_features)).astype(np.float64)
  
@@ -309,26 +338,16 @@ def get_training_specs(cars, notcars):
 
 def pipeline(img):
     global HEATMAP, MODEL, SCALER
-
-    # This part is optional (helps in avoiding searching the sky, for example)
     img_size = img.shape[0:2]
     img_size = img_size[::-1] # Reverse order
-    # HSV/HLS might be better for object detection
-    # because of saturation channel
-    # img = cv2.cvtColor(img, COLOR_CONVERSION)
-    #vertices = np.float32([[0, img_size[1]/2],
-    #                       [0, img_size[1]], 
-    #                       [img_size[0], img_size[1]],
-    #                       [img_size[0], img_size[1]/2]])
-    #img = region_of_interest(img, vertices)
-
    
     # Try different window sizes
-    for size in [256, 128]:
+    for size_factor, overlap in zip([2, 1],[0.50, 0.25]):
         window_list = slide_window(img, 
-                               x_start_stop=[0, img_size[0]], 
-                               y_start_stop=[img_size[1]/2, img_size[1]],
-                               xy_window=(size,size)) # SMALL TO LARGE!
+                          x_start_stop=[0, img_size[0]], 
+                          y_start_stop=[img_size[1]/2+50, img_size[1]], # S to L
+                          xy_window=(100*size_factor,100*size_factor), 
+                          xy_overlap=(overlap, overlap))
         bbox_list = []
         # ...and use the trained classifer to search for vehicles in subimages
         for window in window_list:
@@ -339,25 +358,20 @@ def pipeline(img):
             scaled_X = SCALER.transform(img_features)
             prediction = MODEL.predict(scaled_X)
             if prediction == 1:
-                if DEBUG: print('Found car!')
+                print('Found car!')
                 bbox_list.append(window)
-        add_heat(bbox_list)
+        add_heat(bbox_list, size_factor, 5)
     
-    if DEBUG: plt.imshow(HEATMAP); plt.show()
- 
     # Run your pipeline on a video stream and create a heat map of recurring 
     # detections frame by frame to reject outliers and follow detected vehicles.
     apply_threshold()
-    #if DEBUG: plt.imshow(HEATMAP); plt.show()
     labels = label(HEATMAP)
     if DEBUG and labels: print(labels[1], 'cars found')
-    #if DEBUG: plt.imshow(labels[0], cmap='gray'); plt.show()
 
     # Draw bounding boxes on a copy of the image
     out_img = draw_labeled_bboxes(np.copy(img), labels)
-    if DEBUG: plt.imshow(out_img); plt.show()
-    ground_heatmap()
 
+    ground_heatmap()
     return out_img 
 
 def main():
@@ -390,17 +404,27 @@ def main():
 
 
     # y, x
-    HEATMAP = np.zeros((720,1280,3)).astype(np.float)
+    HEATMAP = np.zeros((720,1280)).astype(np.float)
 
-    if DEBUG:
+    if True:
         images = glob.glob('test_images/test*.jpg')
         print("Looking at images %s" % images)
         for idx, fname in enumerate(images):
             image = cv2.imread(fname)
-            pipeline(image) 
-    else:
+            result = pipeline(image) 
+            out_fn = './output_images/%s' % fname.split('/')[-1]
+            print('Saving output to %s' % out_fn)
+            cv2.imwrite(out_fn, result)
+            # Need to zero out, because these are 'independent' images
+            HEATMAP = np.zeros((720,1280)).astype(np.float) 
+    
+        output_file = 'test_video_out.mp4'
+        clip = VideoFileClip('test_video.mp4')
+        out_clip = clip.fl_image(pipeline)
+        out_clip.write_videofile(output_file, audio=False)
+ 
         # For processing video
-        output_file = 'out.mp4'
+        output_file = 'project_video_out.mp4'
         clip = VideoFileClip('project_video.mp4')
         out_clip = clip.fl_image(pipeline)
         out_clip.write_videofile(output_file, audio=False)
