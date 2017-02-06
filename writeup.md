@@ -9,13 +9,13 @@ The goals / steps of this project were the following:
 * Estimate a bounding box for vehicles detected.
 
 [//]: # (Image References)
-[image1]: ./examples/car_not_car.png
-[image2]: ./examples/HOG_example.jpg
-[image3]: ./examples/sliding_windows.jpg
-[image4]: ./examples/sliding_window.jpg
-[image5]: ./examples/bboxes_and_heat.png
-[image6]: ./examples/labels_map.png
-[image7]: ./examples/output_bboxes.png
+[image1]: ./output_images/car_not_car.png
+[image2]: ./output_images/HOG_example.jpg
+[image3]: ./output_images/sliding_windows.jpg
+[image4]: ./output_images/sliding_window.jpg
+[image5]: ./output_images/bboxes_and_heat.png
+[image6]: ./output_images/labels_map.png
+[image7]: ./output_images/output_bboxes.png
 [video1]: ./project_video.mp4
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/513/view) Points
@@ -28,7 +28,7 @@ The goals / steps of this project were the following:
 
 ####1. Extracting HOG features from the training images.
 
-The code for this step is contained in the function `get_hog_features` in the file called `tracking.py`.  
+The code for this step is contained in the function `get_hog_features` in the file called `pipeline.py`.  
 
 I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
 
@@ -47,13 +47,13 @@ I am still experimenting here.
 
 ####3. Training a classifier using selected HOG features (and, optionally, color features).
 
-I trained a linear SVM using HOG features extracted from a grayscale image. I also appended to those features a color histogram based on the YCrCb color space (converted from BGR) and a spatial histogram. These can be found in the functions `bin_spatial`, `channel_hist`, `get_hog_features`, and `extract_features` in the file called `tracking.py`
+I trained a linear SVM using HOG features extracted from a grayscale image. I also appended to those features a color histogram based on the YCrCb color space (converted from BGR) and a spatial histogram. These can be found in the functions `bin_spatial`, `channel_hist`, `get_hog_features`, and `extract_features` in the file called `pipeline.py`
 
 ###Sliding Window Search
 
 ####1. Implementing a sliding window search.  Scales to search and how much to overlap windows?
 
-I am still trying to find the write balance of window sizes. Generally I have been trying size of 100, 200, 300. I have not found that larger window sizes are helpful (more false positives). I do this in the `pipeline` function of `tracking.py`. I extract features from the windows I recieve from the function `slide_window`.
+I am still trying to find the write balance of window sizes. Generally I have been trying size of 100, 200, 300. I have not found that larger window sizes are helpful (more false positives). I do this in the `pipeline` function of `pipeline.py`. I extract features from the windows I recieve from the function `slide_window`.
 
 ![alt text][image3]
 
