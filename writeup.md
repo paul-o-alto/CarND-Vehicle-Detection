@@ -28,7 +28,7 @@ The goals / steps of this project were the following:
 
 ####1. Extracting HOG features from the training images.
 
-The code for this step is contained in lines # through # of the file called `tracking.py`.  
+The code for this step is contained in the function `get_hog_features` in the file called `tracking.py`.  
 
 I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
 
@@ -43,7 +43,7 @@ Here is an example using the `YCrCb` color space and HOG parameters of `orientat
 
 ####2. Settling on the final choice of HOG parameters.
 
-I tried various combinations of parameters and...
+I am still experimenting here.
 
 ####3. Training a classifier using selected HOG features (and, optionally, color features).
 
