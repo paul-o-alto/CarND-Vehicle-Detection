@@ -1,4 +1,3 @@
----
 **Vehicle Detection Project**
 
 The goals / steps of this project were the following:
