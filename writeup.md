@@ -47,19 +47,19 @@ I tried various combinations of parameters and...
 
 ####3. Training a classifier using selected HOG features (and, optionally, color features).
 
-I trained a linear SVM using... It can be found in lines # through # of the file called `tracking.py`
+I trained a linear SVM using HOG features extracted from a grayscale image. I also appended to those features a color histogram based on the YCrCb color space (converted from BGR) and a spatial histogram. These can be found in the functions `bin_spatial`, `channel_hist`, `get_hog_features`, and `extract_features` in the file called `tracking.py`
 
 ###Sliding Window Search
 
 ####1. Implementing a sliding window search.  Scales to search and how much to overlap windows?
 
-I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;): I did this in lines # through # of the file called `tracking.py`
+I am still trying to find the write balance of window sizes. Generally I have been trying size of 100, 200, 300. I have not found that larger window sizes are helpful (more false positives). I do this in the `pipeline` function of `tracking.py`. I extract features from the windows I recieve from the function `slide_window`.
 
 ![alt text][image3]
 
 ####2. Some examples of test images to demonstrate how the pipeline is working. Optimizing the performance of your classifier.
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
+Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided an ok result.  Here are some example images:
 
 ![alt text][image4]
 ---
@@ -94,5 +94,5 @@ Here's an example result showing the heatmap from a series of frames of video, t
 
 ####1. Problems / issues faced in the implementation of this project.  Where will the pipeline likely fail?  What could be done to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+I am really having an issue with false positives (for example, trees and highway dividers). I also have spurious true detections of cars on the opposite side of the freeway, but yet I sometimes have trouble consistently picking up cars on the same side of the road.  
 
