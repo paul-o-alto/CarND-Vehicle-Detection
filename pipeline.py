@@ -320,7 +320,7 @@ def pipeline(img):
     img_size = img_size[::-1] # Reverse order
    
     # Try different window sizes
-    for size, overlap in zip([128],[0.5]):
+    for size, overlap in zip([256,128],[0.5]*2):
         window_list = slide_window(img, 
                           x_start_stop=[0, img_size[0]], 
                           y_start_stop=[img_size[1]/2-50, img_size[1]-50], # S to L
@@ -335,7 +335,7 @@ def pipeline(img):
                           # In here we need to search the whole image!
                           x_start_stop=[0, sub_img_size[0]],
                           y_start_stop=[0, sub_img_size[1]], # S to L
-                          xy_window=(64, 64),
+                          xy_window=(size/2, size/2),
                           xy_overlap=(0.1, 0.1))
             # We further divide these windows into recursively more sub windows
             # If we find a car in any sub window, we activate to whole parent window
