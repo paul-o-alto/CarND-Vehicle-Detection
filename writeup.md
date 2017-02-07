@@ -43,7 +43,7 @@ Here is an example using the `YCrCb` color space and HOG parameters of `orientat
 
 ####2. Settling on the final choice of HOG parameters.
 
-I am still experimenting here.
+I found the default parameter values to be reasonable. Experimentation with them didn't yield significant results.
 
 ####3. Training a classifier using selected HOG features (and, optionally, color features).
 
@@ -53,7 +53,7 @@ I trained a linear SVM using HOG features extracted from a grayscale image. I al
 
 ####1. Implementing a sliding window search.  Scales to search and how much to overlap windows?
 
-I am still trying to find the write balance of window sizes. Generally I have been trying size of 100, 200, 300. I have not found that larger window sizes are helpful (more false positives). I do this in the `pipeline` function of `pipeline.py`. I extract features from the windows I recieve from the function `slide_window`.
+I settles on one single high level window size of 128. I have not found that larger window sizes are helpful (more false positives). I take each window of 128x128 and I find smaller windows within this window (of size 64x64). I use the detections in these smaller windows as votes of confidence (to add to the heatmap). The amount I add to the heatmap is dictated by the number of confidence votes in each larger window from these smaller window detections. I do this in the `pipeline` function of `pipeline.py`. I extract features from the windows I recieve from the function `slide_window`.
 
 ![alt text][image3]
 
@@ -94,5 +94,5 @@ Here's an example result showing the heatmap from a series of frames of video, t
 
 ####1. Problems / issues faced in the implementation of this project.  Where will the pipeline likely fail?  What could be done to make it more robust?
 
-I am really having an issue with false positives (for example, trees and highway dividers). I also have spurious true detections of cars on the opposite side of the freeway, but yet I sometimes have trouble consistently picking up cars on the same side of the road.  
+I really had an issue with false positives (for example, trees and highway dividers). I also had spurious true detections of cars on the opposite side of the freeway, but yet I sometimes had trouble consistently picking up cars on the same side of the road. It wasn't until I added the 'recursive' search that I started getting more reliable results. The pipeline doesn't seem to deal with changing lighting conditions well. It could be made more robust by training the SVM on binary images (like in the advanced lane lines project) and running on live binary images.  
 
