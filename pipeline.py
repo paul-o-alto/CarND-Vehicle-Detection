@@ -158,7 +158,10 @@ def channel_hist(img, nbins=32, bins_range=(0, 256)):
 # Define a function to compute color histogram features  
 # Pass the color_space flag as 3-letter all caps string
 # like 'HSV' or 'LUV' etc.
-def bin_spatial(img, size=(32, 32)):
+# Size was 32x32 before, but that is probably way to big
+#    It will generate a feature_vec 3072 long! 16x16 is 
+#    only 256, much more reasonable
+def bin_spatial(img, size=(16, 16)):
     feature_image = np.copy(img)             
     # Use cv2.resize().ravel() to create the feature vector
     features = cv2.resize(feature_image, size).ravel() 
@@ -191,7 +194,7 @@ def get_hog_features(img, vis=False, feature_vec=True):
     return features, hog_image
 
 def extract_features(imgs, hog_plus=True, gray_hog=True,
-                     spatial_size=(32, 32), hist_bins=32, hist_range=(0, 256)):
+                     spatial_size=(16, 16), hist_bins=32, hist_range=(0, 256)):
     # Create a list to append feature vectors to
     set_features = []
     # Iterate through the list of images
