@@ -170,12 +170,15 @@ def bin_spatial(img, size=(16, 16)):
 
 
 # Constants specific to hog
-ORIENT = 9
-PIX_PER_CELL = 8
-CELL_PER_BLOCK = 4
+ORIENT = 9 # Usually, 6 to 12
+PIX_PER_CELL = 8 #(8,8)
+CELL_PER_BLOCK = 2 #(2,2)
+# Will be 7x7x2x2x9 long
 
 # Define a function to return HOG features and visualization
+# MAYBE ADD BACK transform_sqrt param?
 def get_hog_features(img, vis=False, feature_vec=True):
+    # feature_vec induces behavior similar to .ravel()
     hog_image = None
     if vis == True:
         features, hog_image = \
@@ -189,7 +192,7 @@ def get_hog_features(img, vis=False, feature_vec=True):
                        orientations=ORIENT, 
                        pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                        cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                       visualise=False)#, feature_vector=feature_vec)
+                       visualise=False, feature_vector=feature_vec)
     if DEBUG: cv2.imwrite('./output_images/HOG_example.jpg', hog_image)
     return features, hog_image
 
@@ -390,6 +393,7 @@ def main():
         print('Got exception %s when trying to load model file' % e)
 
     # Divide up into cars and notcars
+    print("USE LARGER DATASET!")
     images = glob.glob('./training_set/*/*/*.jpeg')
     cars = []
     notcars = []
