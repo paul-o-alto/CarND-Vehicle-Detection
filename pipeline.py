@@ -186,7 +186,7 @@ def get_hog_features(img, vis=False, feature_vec=True):
                 orientations=ORIENT, 
                 pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                 cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                visualise=True)#, feature_vector=feature_vec)
+                visualise=True, feature_vector=feature_vec)
     else:      
         features = hog(img, 
                        orientations=ORIENT, 
@@ -219,9 +219,9 @@ def extract_features(imgs, hog_plus=True, gray_hog=True,
                                     vis=DEBUG, feature_vec=True)
 
         else:
-            color_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
+            color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
             hog_channels = []
-            for channel in [0,1,2]:
+            for channel in [1]:
                 feature_image = color_image[:,:,channel]
                 hog_features, hog_image = get_hog_features(feature_image,
                                          vis=DEBUG, feature_vec=True)
@@ -283,6 +283,9 @@ def train_svm(scaled_X, y):
 
     # Split up data into randomized training and test sets
     rand_state = np.random.randint(0, 100)
+    # NOTE: DO THIS SEPERATELY FOR BOTH CAR AND NONCAR?
+    # Also, worry about time series images? (virtually
+    # identical later versions of images in opposite set)
     X_train, X_test, y_train, y_test = train_test_split(
         scaled_X, y, test_size=0.2, random_state=rand_state)
 
@@ -319,8 +322,9 @@ def get_training_specs(cars, notcars):
  
     # Fit a per-column scaler
     X_scaler = StandardScaler().fit(X)
+    scaled_X = X_scaler.transform(X) # Forgot this step before!
     y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
-    return X_scaler, X, y
+    return X_scaler, scaled_X, y
 
 
 def pipeline(img):
