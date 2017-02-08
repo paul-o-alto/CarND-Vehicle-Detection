@@ -394,14 +394,8 @@ def main():
 
     # Divide up into cars and notcars
     print("USE LARGER DATASET!")
-    images = glob.glob('./training_set/*/*/*.jpeg')
-    cars = []
-    notcars = []
-    for image in images:
-        if 'image' in image or 'extra' in image:
-            notcars.append(image)
-        else:
-            cars.append(image)
+    cars    = glob.glob('./training_set/vehicles/*/*.png')
+    notcars = glob.glob('./training_set/non-vehicles/*/*.png')
 
     if not MODEL or not SCALER:
         SCALER, X, y = get_training_specs(cars, notcars)
