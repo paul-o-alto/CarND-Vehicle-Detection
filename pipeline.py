@@ -151,8 +151,10 @@ def channel_hist(img, nbins=32, bins_range=(0, 256)):
     hist_features = np.concatenate((c1_hist[0], c2_hist[0], c3_hist[0]))
     #print(hist_features)
     # Return the individual histograms, bin_centers and feature vector
-    return hist_features, c1_hist, c2_hist, c3_hist, bin_centers
-
+    #return hist_features, c1_hist, c2_hist, c3_hist, bin_centers
+    # This is how it was in the lecture code
+    return c1_hist, c2_hist, c3_hist, bin_centers, hist_features
+    
 # Define a function to compute color histogram features  
 # Pass the color_space flag as 3-letter all caps string
 # like 'HSV' or 'LUV' etc.
@@ -236,7 +238,8 @@ def extract_features(imgs, hog_plus=True, gray_hog=True,
                 hist_features = channel_hist(color_image, 
                                        nbins=hist_bins, 
                                        bins_range=hist_range)
-                hist_features = hist_features[0]
+                #hist_features = hist_features[0]
+                hist_features = hist_features[4]
                 if hist_features is not None:
                     #print("Got channel histogram!")
                     all_features += (hist_features,)
