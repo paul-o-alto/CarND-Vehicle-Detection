@@ -186,17 +186,17 @@ def get_hog_features(img, vis=False, feature_vec=True):
                 orientations=ORIENT, 
                 pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                 cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                visualise=True, feature_vector=feature_vec)
+                visualise=True) #feature_vector=feature_vec)
     else:      
         features = hog(img, 
                        orientations=ORIENT, 
                        pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                        cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                       visualise=False, feature_vector=feature_vec)
+                       visualise=False) #, feature_vector=feature_vec)
     if DEBUG: cv2.imwrite('./output_images/HOG_example.jpg', hog_image)
     return features, hog_image
 
-def extract_features(imgs, hog_plus=True, gray_hog=True,
+def extract_features(imgs, hog_plus=True, gray_hog=False, #True,
                      spatial_size=(16, 16), hist_bins=32, hist_range=(0, 256)):
     # Create a list to append feature vectors to
     set_features = []
@@ -221,7 +221,7 @@ def extract_features(imgs, hog_plus=True, gray_hog=True,
         else:
             color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
             hog_channels = []
-            for channel in [1]:
+            for channel in [2]:
                 feature_image = color_image[:,:,channel]
                 hog_features, hog_image = get_hog_features(feature_image,
                                          vis=DEBUG, feature_vec=True)
@@ -327,14 +327,12 @@ def get_training_specs(cars, notcars):
     y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
     return X_scaler, scaled_X, y
 
-def add_heat(heatmap, bbox_list):
+def add_heat(bbox_list):
+    global HEATMAP
     # Iterate through list of bboxes
     for box in boxlist:
         # Add += 1 for all pixels inside each bbox
-        heat[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
-    
-    # Return updated heatmap
-    return heatmap
+        HEATMAP[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
 
 def pipeline(img):
     global HEATMAP, MODEL, SCALER
@@ -358,27 +356,15 @@ def pipeline(img):
             sub_img = img[window[0][1]:window[1][1], window[0][0]:window[1][0]]
             sub_img = cv2.resize(sub_img, (64, 64)) # Is this necessary
             sub_img_size = sub_img.shape[0:2][::-1]
-            sub_windows = slide_window(sub_img,
-                          # In here we need to search the whole image!
-                          x_start_stop=[0, sub_img_size[0]],
-                          y_start_stop=[0, sub_img_size[1]], # S to L
-                          xy_window=(size/2, size/2),
-                          xy_overlap=(0.1, 0.1))
-            # We further divide these windows into recursively more sub windows
-            # If we find a car in any sub window, we activate to whole parent window
-            found = False
-            confidence = 0
-            for sub_window in sub_windows:
-                img_features = extract_features([sub_img[sub_window[0][1]:sub_window[1][1], 
-                                                         sub_window[0][0]:sub_window[1][0]]])
-                # Apply the scaler to X
-                scaled_X = SCALER.transform(np.array(img_features).reshape(1, -1))
-                prediction = MODEL.predict(scaled_X)
-                if prediction[0] == 1:
-                    bbox_list.append(window)
-
-                
+            img_features = extract_features([sub_img])
+            # Apply the scaler to X
+            scaled_X = SCALER.transform(np.array(img_features).reshape(1, -1))
+            prediction = MODEL.predict(scaled_X)
+            if prediction[0] == 1:
+                bbox_list.append(window)
+                print("Found car!") ##found = True # Was found in one subwindow
         
+    add_heat(bbox_list)
     #plt.imshow(HEATMAP); plt.show()
     
     # Run your pipeline on a video stream and create a heat map of recurring 
@@ -394,7 +380,7 @@ def pipeline(img):
 
     # Draw bounding boxes on a copy of the image
     out_img = draw_labeled_bboxes(np.copy(img), labels)
-
+ 
     return out_img 
 
 def main():
