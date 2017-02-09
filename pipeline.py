@@ -177,7 +177,7 @@ CELL_PER_BLOCK = 2 #(2,2)
 
 # Define a function to return HOG features and visualization
 # MAYBE ADD BACK transform_sqrt param?
-def get_hog_features(img, vis=False, feature_vec=True):
+def get_hog_features(img, vis=False, feature_vec=False):
     # feature_vec induces behavior similar to .ravel()
     hog_image = None
     if vis == True:
@@ -186,17 +186,18 @@ def get_hog_features(img, vis=False, feature_vec=True):
                 orientations=ORIENT, 
                 pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                 cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                visualise=True) #feature_vector=feature_vec)
+                visualise=True, feature_vector=feature_vec)
     else:      
         features = hog(img, 
                        orientations=ORIENT, 
                        pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                        cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                       visualise=False) #, feature_vector=feature_vec)
+                       visualise=False, feature_vector=feature_vec)
     if DEBUG: cv2.imwrite('./output_images/HOG_example.jpg', hog_image)
     return features, hog_image
 
-def extract_features(imgs, hog_plus=True, gray_hog=False, #True,
+def extract_features(imgs, include_hog=True, include_spatial=True, include_color_hist=True,
+                     gray_hog=False, #True,
                      spatial_size=(16, 16), hist_bins=32, hist_range=(0, 256)):
     # Create a list to append feature vectors to
     set_features = []
@@ -213,26 +214,24 @@ def extract_features(imgs, hog_plus=True, gray_hog=False, #True,
             image = cv2.resize(image, (t_size, t_size), 
                                fx=t_size/image.shape[1], fy=t_size/image.shape[0])
 
-        if gray_hog:
-            feature_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)        
-            tot_hog_features, _ = get_hog_features(feature_image, 
-                                    vis=DEBUG, feature_vec=True)
-
-        else:
-            color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-            hog_channels = []
-            for channel in [2]:
-                feature_image = color_image[:,:,channel]
-                hog_features, hog_image = get_hog_features(feature_image,
-                                         vis=DEBUG, feature_vec=True)
-                hog_channels.append(hog_features)
-            tot_hog_features = np.ravel(hog_channels)
-            #tot_hog_features = np.concatenate(hog_channels)
+        if include_hog:
+            if gray_hog:
+                feature_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)        
+                tot_hog_features, _ = get_hog_features(feature_image, 
+                                        vis=DEBUG, feature_vec=False)
+            else:
+                color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
+                hog_channels = []
+                for channel in [2]:
+                    feature_image = color_image[:,:,channel]
+                    hog_features, _ = get_hog_features(feature_image,
+                                             vis=DEBUG, feature_vec=False)
+                    hog_channels.append(hog_features)
+                tot_hog_features = np.ravel(hog_channels)
 
         all_features = (tot_hog_features,)
-        spatial_features = []
-        hist_features = []
-        if hog_plus:
+       
+        if include_spatial:
             color_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
             # Apply bin_spatial() to get spatial color features
             if spatial_size: 
@@ -241,11 +240,10 @@ def extract_features(imgs, hog_plus=True, gray_hog=False, #True,
                     #print("Got spatial features!")
                     all_features += (spatial_features,)
             # Apply channel_hist() also with a color space option now
-            if hist_bins and hist_range: 
+            if include_color_hist:
                 hist_features = channel_hist(color_image, 
                                        nbins=hist_bins, 
                                        bins_range=hist_range)
-                #hist_features = hist_features[0]
                 hist_features = hist_features[4]
                 if hist_features is not None:
                     #print("Got channel histogram!")
@@ -341,6 +339,10 @@ def pipeline(img):
    
     # Try different window sizes
     bbox_list = []
+    # Prefetch hog features for speed (might be an off-by-one error here)
+    # Example 64x64 image, 8x8 block, 7x7  x2x2x9
+    hog_search_frame = extract_features(img, include_hog=True, 
+                                        include_spatial=False, include_color_hist=False)
     for size, overlap, y_stop in zip([512,256,128,64],
                                      [0.5]*4, 
                                      [img_size[1], img_size[1]*7/8, img_size[1]*6/8, img_size[1]*5/8]
@@ -356,7 +358,14 @@ def pipeline(img):
             sub_img = img[window[0][1]:window[1][1], window[0][0]:window[1][0]]
             sub_img = cv2.resize(sub_img, (64, 64)) # Is this necessary
             sub_img_size = sub_img.shape[0:2][::-1]
-            img_features = extract_features([sub_img])
+            other_features = extract_features([sub_img], 
+                                              include_hog=False,
+                                              include_spatial=True, 
+                                              include_color_hist=True)
+            img_features = np.concatenate(
+                            hog_search_frame[window[0][1]:window[1][1], 
+                                             window[0][0]:window[1][0]],#.ravel(),
+                            other_features)
             # Apply the scaler to X
             scaled_X = SCALER.transform(np.array(img_features).reshape(1, -1))
             prediction = MODEL.predict(scaled_X)
