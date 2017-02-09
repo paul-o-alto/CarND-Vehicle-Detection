@@ -226,7 +226,8 @@ def extract_features(imgs, hog_plus=True, gray_hog=True,
                 hog_features, hog_image = get_hog_features(feature_image,
                                          vis=DEBUG, feature_vec=True)
                 hog_channels.append(hog_features)
-            tot_hog_features = np.concatenate(hog_channels)
+            tot_hog_features = np.ravel(hog_channels)
+            #tot_hog_features = np.concatenate(hog_channels)
 
         all_features = (tot_hog_features,)
         spatial_features = []
@@ -326,6 +327,14 @@ def get_training_specs(cars, notcars):
     y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
     return X_scaler, scaled_X, y
 
+def add_heat(heatmap, bbox_list):
+    # Iterate through list of bboxes
+    for box in boxlist:
+        # Add += 1 for all pixels inside each bbox
+        heat[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+    
+    # Return updated heatmap
+    return heatmap
 
 def pipeline(img):
     global HEATMAP, MODEL, SCALER
@@ -333,6 +342,7 @@ def pipeline(img):
     img_size = img_size[::-1] # Reverse order
    
     # Try different window sizes
+    bbox_list = []
     for size, overlap, y_stop in zip([512,256,128,64],
                                      [0.5]*4, 
                                      [img_size[1], img_size[1]*7/8, img_size[1]*6/8, img_size[1]*5/8]
@@ -346,6 +356,7 @@ def pipeline(img):
         # Here we have the macro windows that we will iterate over
         for window in window_list:
             sub_img = img[window[0][1]:window[1][1], window[0][0]:window[1][0]]
+            sub_img = cv2.resize(sub_img, (64, 64)) # Is this necessary
             sub_img_size = sub_img.shape[0:2][::-1]
             sub_windows = slide_window(sub_img,
                           # In here we need to search the whole image!
@@ -361,33 +372,29 @@ def pipeline(img):
                 img_features = extract_features([sub_img[sub_window[0][1]:sub_window[1][1], 
                                                          sub_window[0][0]:sub_window[1][0]]])
                 # Apply the scaler to X
-                scaled_X = SCALER.transform(img_features)
+                scaled_X = SCALER.transform(np.array(img_features).reshape(1, -1))
                 prediction = MODEL.predict(scaled_X)
                 if prediction[0] == 1:
-                    found = True # Was found in one subwindow
-                    confidence += 1
+                    bbox_list.append(window)
 
-            if found:
-                HEATMAP[window[0][1]:window[1][1], 
-                        window[0][0]:window[1][0]] += confidence
+                
         
     #plt.imshow(HEATMAP); plt.show()
     
     # Run your pipeline on a video stream and create a heat map of recurring 
     # detections frame by frame to reject outliers and follow detected vehicles.
-    HEATMAP[HEATMAP < HEATMAP_THRESH] = 0
+    HEATMAP[HEATMAP <= HEATMAP_THRESH] = 0
     labels = label(HEATMAP)
-    HEATMAP = labels[0]
+    
     if DEBUG: 
-        #print(labels[1], 'cars found')
+        final_map = np.clip(HEATMAP - 2, 0, 255)
+        plt.imshow(final_map, cmap='hot')
+        print(labels[1], 'cars found')
         cv2.imwrite('./output_images/labels_map.png', labels[0])
 
     # Draw bounding boxes on a copy of the image
     out_img = draw_labeled_bboxes(np.copy(img), labels)
-    #out_img = draw_boxes(img, bboxes)
- 
-    #HEATMAP[HEATMAP <= HEATMAP_THRESH] = 0
-    HEATMAP[HEATMAP >= HEATMAP_THRESH] -= 1
+
     return out_img 
 
 def main():
