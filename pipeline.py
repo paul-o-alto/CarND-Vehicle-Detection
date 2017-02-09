@@ -333,10 +333,13 @@ def pipeline(img):
     img_size = img_size[::-1] # Reverse order
    
     # Try different window sizes
-    for size, overlap in zip([256,128],[0.5]*2):
+    for size, overlap, y_stop in zip([512,256,128,64],
+                                     [0.5]*4, 
+                                     [img_size[1], img_size[1]*7/8, img_size[1]*6/8, img_size[1]*5/8]
+                                    ):
         window_list = slide_window(img, 
                           x_start_stop=[0, img_size[0]], 
-                          y_start_stop=[img_size[1]/2-50, img_size[1]-50], # S to L
+                          y_start_stop=[img_size[1]/2, y_stop], # S to L
                           xy_window=(size,size), 
                           xy_overlap=(overlap, overlap)
                           )
