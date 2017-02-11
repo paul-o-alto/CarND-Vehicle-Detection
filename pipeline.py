@@ -20,6 +20,7 @@ SCALER = None
 MODEL_FILE  = 'svm.pkl'
 SCALER_FILE = 'scaler.pkl' 
 HEATMAP = None
+HEATMAP = [None]*30 # NOTE: Last 30 frames. AND them?
 HEATMAP_THRESH = 2
 
 def region_of_interest(img, vertices):
@@ -139,11 +140,11 @@ def find_matches(img, template_list):
     return bbox_list
 
 # Define a function to compute color histogram features  
-def channel_hist(img, nbins=32, bins_range=(0, 256)):
+def channel_hist(img, nbins=32):
     # Compute the histogram of the RGB channels separately
-    c1_hist = np.histogram(img[:,:,0], bins=nbins, range=bins_range)
-    c2_hist = np.histogram(img[:,:,1], bins=nbins, range=bins_range)
-    c3_hist = np.histogram(img[:,:,2], bins=nbins, range=bins_range)
+    c1_hist = np.histogram(img[:,:,0], bins=nbins)
+    c2_hist = np.histogram(img[:,:,1], bins=nbins)
+    c3_hist = np.histogram(img[:,:,2], bins=nbins)
     # Generating bin centers
     bin_edges = c1_hist[1]
     bin_centers = (bin_edges[1:]  + bin_edges[0:len(bin_edges)-1])/2
@@ -161,7 +162,8 @@ def channel_hist(img, nbins=32, bins_range=(0, 256)):
 # Size was 32x32 before, but that is probably way to big
 #    It will generate a feature_vec 3072 long! 16x16 is 
 #    only 256, much more reasonable
-def bin_spatial(img, size=(16, 16)):
+# NOTE: All three channels? hstack them?
+def bin_spatial(img, size=(32, 32)):
     feature_image = np.copy(img)             
     # Use cv2.resize().ravel() to create the feature vector
     features = cv2.resize(feature_image, size).ravel() 
@@ -198,7 +200,7 @@ def get_hog_features(img, vis=False, feature_vec=False):
 
 def extract_features(imgs, include_hog=True, include_spatial=True, include_color_hist=True,
                      gray_hog=False, #True,
-                     spatial_size=(16, 16), hist_bins=32, hist_range=(0, 256)):
+                     spatial_size=(16, 16), hist_bins=16):
     # Create a list to append feature vectors to
     set_features = []
     # Iterate through the list of images
@@ -240,14 +242,13 @@ def extract_features(imgs, include_hog=True, include_spatial=True, include_color
                     #print("Got spatial features!")
                     all_features += (spatial_features,)
             # Apply channel_hist() also with a color space option now
-            if include_color_hist:
-                hist_features = channel_hist(color_image, 
-                                       nbins=hist_bins, 
-                                       bins_range=hist_range)
-                hist_features = hist_features[4]
-                if hist_features is not None:
-                    #print("Got channel histogram!")
-                    all_features += (hist_features,)
+        if include_color_hist:
+            hist_features = channel_hist(color_image, 
+                                         nbins=hist_bins)
+            hist_features = hist_features[4]
+            if hist_features is not None:
+                #print("Got channel histogram!")
+                all_features += (hist_features,)
        
         img_features = np.concatenate(all_features)
         if len(imgs) == 1: 
@@ -280,6 +281,8 @@ def data_look(car_list, notcar_list):
 
 def train_svm(scaled_X, y):
 
+    print("Training on %s features" % len(scaled_X[0])) # 8,000 if fine
+    
     # Split up data into randomized training and test sets
     rand_state = np.random.randint(0, 100)
     # NOTE: DO THIS SEPERATELY FOR BOTH CAR AND NONCAR?
@@ -343,9 +346,9 @@ def pipeline(img):
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
     hog_search_frame = extract_features(img, include_hog=True, 
                                         include_spatial=False, include_color_hist=False)
-    for size, overlap, y_stop in zip([512,256,128,64],
-                                     [0.5]*4, 
-                                     [img_size[1], img_size[1]*7/8, img_size[1]*6/8, img_size[1]*5/8]
+    for size, overlap, y_stop in zip([96], # NOTE: Multiple of HOG cell size!
+                                     [0.5]*1, 
+                                     [656] #img_size[1]] #, img_size[1]*7/8, img_size[1]*6/8, img_size[1]*5/8]
                                     ):
         window_list = slide_window(img, 
                           x_start_stop=[0, img_size[0]], 
@@ -359,7 +362,7 @@ def pipeline(img):
             sub_img = cv2.resize(sub_img, (64, 64)) # Is this necessary
             sub_img_size = sub_img.shape[0:2][::-1]
             other_features = extract_features([sub_img], 
-                                              include_hog=False,
+                                              include_hog=True,
                                               include_spatial=True, 
                                               include_color_hist=True)
             img_features = np.concatenate(
@@ -369,7 +372,8 @@ def pipeline(img):
             # Apply the scaler to X
             scaled_X = SCALER.transform(np.array(img_features).reshape(1, -1))
             prediction = MODEL.predict(scaled_X)
-            if prediction[0] == 1:
+            #if prediction[0] == 1:
+            if prediction == 1:
                 bbox_list.append(window)
                 print("Found car!") ##found = True # Was found in one subwindow
         
