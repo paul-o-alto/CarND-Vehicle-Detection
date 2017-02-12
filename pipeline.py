@@ -9,6 +9,7 @@ from scipy.ndimage.measurements import label
 from skimage.feature import hog
 from sklearn.svm import LinearSVC
 from sklearn.externals import joblib
+from sklearn.utils import shuffle
 from sklearn.preprocessing import StandardScaler
 #from sklearn.model_selection import train_test_split # >= 0.18
 from sklearn.cross_validation import train_test_split
@@ -20,7 +21,6 @@ SCALER = None
 MODEL_FILE  = 'svm.pkl'
 SCALER_FILE = 'scaler.pkl' 
 HEATMAP = None
-HEATMAP = [None]*30 # NOTE: Last 30 frames. AND them?
 HEATMAP_THRESH = 2
 
 def region_of_interest(img, vertices):
@@ -166,9 +166,11 @@ def channel_hist(img, nbins=32):
 def bin_spatial(img, size=(32, 32)):
     feature_image = np.copy(img)             
     # Use cv2.resize().ravel() to create the feature vector
-    features = cv2.resize(feature_image, size).ravel() 
+    features_ch1 = cv2.resize(feature_image[:,:,0], size).ravel() 
+    features_ch2 = cv2.resize(feature_image[:,:,1], size).ravel()
+    features_ch3 = cv2.resize(feature_image[:,:,2], size).ravel()
     # Return the feature vector
-    return features
+    return np.hstack((features_ch1, features_ch2, features_ch3))
 
 
 # Constants specific to hog
@@ -188,19 +190,19 @@ def get_hog_features(img, vis=False, feature_vec=False):
                 orientations=ORIENT, 
                 pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                 cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                visualise=True, feature_vector=feature_vec)
+                visualise=True)#, feature_vector=feature_vec)
     else:      
         features = hog(img, 
                        orientations=ORIENT, 
                        pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
                        cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                       visualise=False, feature_vector=feature_vec)
-    if DEBUG: cv2.imwrite('./output_images/HOG_example.jpg', hog_image)
+                       visualise=False)#, feature_vector=feature_vec)
+    #if DEBUG: cv2.imwrite('./output_images/HOG_example.jpg', hog_image)
     return features, hog_image
 
 def extract_features(imgs, include_hog=True, include_spatial=True, include_color_hist=True,
                      gray_hog=False, #True,
-                     spatial_size=(16, 16), hist_bins=16):
+                     spatial_size=(32, 32), hist_bins=16):
     # Create a list to append feature vectors to
     set_features = []
     # Iterate through the list of images
@@ -216,6 +218,7 @@ def extract_features(imgs, include_hog=True, include_spatial=True, include_color
             image = cv2.resize(image, (t_size, t_size), 
                                fx=t_size/image.shape[1], fy=t_size/image.shape[0])
 
+        all_features = ([],)
         if include_hog:
             if gray_hog:
                 feature_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)        
@@ -224,17 +227,16 @@ def extract_features(imgs, include_hog=True, include_spatial=True, include_color
             else:
                 color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
                 hog_channels = []
-                for channel in [2]:
+                for channel in [0,1,2]:
                     feature_image = color_image[:,:,channel]
                     hog_features, _ = get_hog_features(feature_image,
                                              vis=DEBUG, feature_vec=False)
                     hog_channels.append(hog_features)
                 tot_hog_features = np.ravel(hog_channels)
 
-        all_features = (tot_hog_features,)
-       
+            all_features += (tot_hog_features,)
+        color_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
         if include_spatial:
-            color_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
             # Apply bin_spatial() to get spatial color features
             if spatial_size: 
                 spatial_features = bin_spatial(color_image, size=spatial_size)
@@ -279,17 +281,33 @@ def data_look(car_list, notcar_list):
     # Return data_dict
     return data_dict
 
-def train_svm(scaled_X, y):
+def train_svm(car_X, car_y, notcar_X, notcar_y):
 
-    print("Training on %s features" % len(scaled_X[0])) # 8,000 if fine
+    print("Training on %s features" % len(car_X[0])) # 8,000 if fine
     
+    scaled_car_X = SCALER.transform(car_X)
+    scaled_notcar_X = SCALER.transform(notcar_X)
     # Split up data into randomized training and test sets
+
     rand_state = np.random.randint(0, 100)
-    # NOTE: DO THIS SEPERATELY FOR BOTH CAR AND NONCAR?
-    # Also, worry about time series images? (virtually
-    # identical later versions of images in opposite set)
-    X_train, X_test, y_train, y_test = train_test_split(
-        scaled_X, y, test_size=0.2, random_state=rand_state)
+    X_car_train, X_car_test, y_car_train, y_car_test = \
+	train_test_split(scaled_car_X, car_y, 
+                         test_size=0.2, random_state=rand_state)
+    X_notcar_train, X_notcar_test, y_notcar_train, y_notcar_test = \
+        train_test_split(scaled_notcar_X, notcar_y,
+                         test_size=0.2, random_state=rand_state)
+
+    train_rs = np.random.randint(0,100) # Same for both X and y
+    X_train = shuffle(np.concatenate((X_car_train, X_notcar_train)),
+                      random_state=train_rs)
+    y_train = shuffle(np.concatenate((y_car_train, y_notcar_train)),
+                      random_state=train_rs)
+
+    test_rs = np.random.randint(0,100) # Same for both X and y
+    X_test = shuffle(np.concatenate((X_car_test, X_notcar_test)),
+                     random_state=test_rs)
+    y_test = shuffle(np.concatenate((y_car_test, y_notcar_test)),
+                     random_state=test_rs)
 
     # Use a linear SVC 
     svc = LinearSVC()
@@ -310,7 +328,8 @@ def train_svm(scaled_X, y):
     return svc
 
 def get_training_specs(cars, notcars):
-    
+    global SCALER   
+ 
     print(data_look(cars, notcars))
     print('# cars: %s, # not-cars: %s' % (len(cars), len(notcars)))
     car_features    = extract_features(cars)
@@ -321,83 +340,86 @@ def get_training_specs(cars, notcars):
     print('Example non-Car Features: %s' % (notcar_features[0],))
     # Create an array stack of feature vectors
     X = np.vstack((car_features, notcar_features)).astype(np.float64)
- 
-    # Fit a per-column scaler
-    X_scaler = StandardScaler().fit(X)
-    scaled_X = X_scaler.transform(X) # Forgot this step before!
-    y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
-    return X_scaler, scaled_X, y
 
-def add_heat(bbox_list):
+    # Fit a per-column scaler
+    SCALER = StandardScaler().fit(X)
+    car_labels = np.ones(len(car_features))
+    notcar_labels = np.zeros(len(notcar_features))
+    return car_features, car_labels, notcar_features, notcar_labels
+
+def add_heat(bbox_list, heatmap=None):
     global HEATMAP
+
+    if heatmap is None:
+        heatmap = HEATMAP
+
     # Iterate through list of bboxes
-    for box in boxlist:
+    for box in bbox_list:
         # Add += 1 for all pixels inside each bbox
-        HEATMAP[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+
+    return heatmap
 
 def pipeline(img):
     global HEATMAP, MODEL, SCALER
     img_size = img.shape[0:2]
     img_size = img_size[::-1] # Reverse order
-   
+
     # Try different window sizes
     bbox_list = []
-    # Prefetch hog features for speed (might be an off-by-one error here)
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
-    hog_search_frame = extract_features(img, include_hog=True, 
-                                        include_spatial=False, include_color_hist=False)
-    for size, overlap, y_stop in zip([96], # NOTE: Multiple of HOG cell size!
-                                     [0.5]*1, 
-                                     [656] #img_size[1]] #, img_size[1]*7/8, img_size[1]*6/8, img_size[1]*5/8]
-                                    ):
+    for size, overlap, y_start, y_stop in zip([256,512], # NOTE: Multiple of HOG cell size!
+                                              [0.5]*2, 
+                                              [360,380],
+                                              [656]*2):
+        #if DEBUG: print("size=%s, overlap=%s, y_stop=%s" % (size, overlap, y_stop))
         window_list = slide_window(img, 
                           x_start_stop=[0, img_size[0]], 
-                          y_start_stop=[img_size[1]/2, y_stop], # S to L
+                          y_start_stop=[y_start, y_stop], # S to L
                           xy_window=(size,size), 
                           xy_overlap=(overlap, overlap)
                           )
         # Here we have the macro windows that we will iterate over
         for window in window_list:
             sub_img = img[window[0][1]:window[1][1], window[0][0]:window[1][0]]
-            sub_img = cv2.resize(sub_img, (64, 64)) # Is this necessary
             sub_img_size = sub_img.shape[0:2][::-1]
-            other_features = extract_features([sub_img], 
+            img_features = extract_features([sub_img], 
                                               include_hog=True,
                                               include_spatial=True, 
                                               include_color_hist=True)
-            img_features = np.concatenate(
-                            hog_search_frame[window[0][1]:window[1][1], 
-                                             window[0][0]:window[1][0]],#.ravel(),
-                            other_features)
             # Apply the scaler to X
             scaled_X = SCALER.transform(np.array(img_features).reshape(1, -1))
             prediction = MODEL.predict(scaled_X)
-            #if prediction[0] == 1:
-            if prediction == 1:
+            if prediction[0] == 1:
+            #if prediction == 1:
                 bbox_list.append(window)
-                print("Found car!") ##found = True # Was found in one subwindow
+                print("Found car!") 
         
     add_heat(bbox_list)
-    #plt.imshow(HEATMAP); plt.show()
     
     # Run your pipeline on a video stream and create a heat map of recurring 
     # detections frame by frame to reject outliers and follow detected vehicles.
-    HEATMAP[HEATMAP <= HEATMAP_THRESH] = 0
     labels = label(HEATMAP)
-    
+
     if DEBUG: 
         final_map = np.clip(HEATMAP - 2, 0, 255)
-        plt.imshow(final_map, cmap='hot')
+        #plt.imshow(final_map, cmap='hot'); plt.show()
         print(labels[1], 'cars found')
         cv2.imwrite('./output_images/labels_map.png', labels[0])
 
-    # Draw bounding boxes on a copy of the image
-    out_img = draw_labeled_bboxes(np.copy(img), labels)
- 
+    if labels[1] > 0:
+        # Draw bounding boxes on a copy of the image
+        out_img = draw_labeled_bboxes(np.copy(img), labels)
+    else:
+        out_img = img
+
+    HEATMAP[(HEATMAP <= HEATMAP_THRESH)] = 0
+
     return out_img 
 
 def main():
     global DEBUG, MODEL, SCALER, HEATMAP
+
 
     try:
         MODEL = joblib.load(MODEL_FILE)
@@ -406,21 +428,18 @@ def main():
         print('Got exception %s when trying to load model file' % e)
 
     # Divide up into cars and notcars
-    print("USE LARGER DATASET!")
-    cars    = glob.glob('./training_set/vehicles/*/*.png')
-    notcars = glob.glob('./training_set/non-vehicles/*/*.png')
+    print("Using KITTI-only car dataset, to avoid time series issues.")
+    cars    = glob.glob('./training_set/vehicles/*/*.png') #KITTI* 
+    notcars = glob.glob('./training_set/non-vehicles/*/*.png') #Extras
 
     if not MODEL or not SCALER:
-        SCALER, X, y = get_training_specs(cars, notcars)
-        # Apply the scaler to X
-        scaled_X = SCALER.transform(X)
+        car_X, car_y, notcar_X, notcar_y = \
+            get_training_specs(cars, notcars)
         print("Training a Linear SVM classifier")
-        MODEL = train_svm(scaled_X, y)
+        MODEL = train_svm(car_X, car_y, notcar_X, notcar_y)
         joblib.dump(MODEL, MODEL_FILE)
         joblib.dump(SCALER, SCALER_FILE)
 
-
-    # y, x
     HEATMAP = np.zeros((720,1280)).astype(np.uint8)
 
     if DEBUG:
@@ -433,8 +452,8 @@ def main():
             print('Saving output to %s' % out_fn)
             cv2.imwrite(out_fn, result)
             # Need to zero out, because these are 'independent' images
-            HEATMAP = np.zeros((720,1280)).astype(np.uint8) 
-            DEBUG = False
+            PREV_HEATMAP = np.zeros_like(image[:,:,0]).astype(np.uint8) 
+            #DEBUG = False
    
         output_file = 'test_video_out.mp4'
         clip = VideoFileClip('test_video.mp4')
