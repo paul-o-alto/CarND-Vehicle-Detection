@@ -1,3 +1,5 @@
+import numpy as np
+
 class Vehicle():
     """
     This class keeps track of existing detections. An instance of
@@ -6,16 +8,16 @@ class Vehicle():
     actual vehicle. Instances of this class should be placed in an 
     iterator which will be, effectively, a cache of previous 
     detections. When averages are recomputed in this class, the new  
-    bounding box should be check for an actual detection on the     
-    image in question.
+    bounding box should be checked for an actual detection on  
+    the image in question.
     """
 
     def __init__(self):
         self.n = 30 # Roughly 1 second of video
         self.detected = False # was it detected in the last frame
         
-        self.n_detections = 0 # number of times this vehicle has been
-        self.n_nodetections = 0 # number of consecutive non-detection
+        self.num_detections = 0 # number of times this vehicle has been
+        self.num_nodetections = 0 # number of consecutive non-detection
         
         self.xpixels = None # pixel x values of last detection
         self.ypixels = None # pixel y values of last detection
@@ -31,10 +33,10 @@ class Vehicle():
         self.besth = None # average height of last n fits
     
     def get_avg_bbox(self):
-        half_height = self.recent_hfitted/2
-        half_width  = self.recent_wfitted/2
+        half_height = self.besth/2
+        half_width  = self.bestw/2
         return ((self.bestx - half_width, self.besty - half_height),
-                (self.bestx + half_width, self.besty + half.height))
+                (self.bestx + half_width, self.besty + half_height))
     
     def set_detection(self, outcome):
         """
@@ -50,6 +52,13 @@ class Vehicle():
         else:
             self.detected = False
             self.num_nodetections += 1
+    
+    def is_valid(self):
+        # Basically, our confidence over time
+        valid =  self.num_detections > self.num_nodetections
+        if valid:
+            print("Found previous detection!")
+        return valid
     
     def set_pixels(self, nonzerox, nonzeroy):
         self.xpixels = nonzerox

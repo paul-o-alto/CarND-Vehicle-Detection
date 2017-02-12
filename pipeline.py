@@ -15,6 +15,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cross_validation import train_test_split
 from moviepy.editor import VideoFileClip
 
+from vehicle import Vehicle
+
 DEBUG = not True
 MODEL = None
 SCALER = None
@@ -22,6 +24,7 @@ MODEL_FILE  = 'svm.pkl'
 SCALER_FILE = 'scaler.pkl' 
 HEATMAP = None
 HEATMAP_THRESH = 2
+VEHICLES = {}
 
 def region_of_interest(img, vertices):
     """
@@ -61,13 +64,19 @@ def draw_boxes(img, bboxes, color=(0, 0, 255), thick=6):
 def draw_labeled_bboxes(img, labels):
     # Iterate through all detected cars
     for car_number in range(1, labels[1]+1):
+        if not VEHICLES.has_key(car_number):
+            VEHICLES[car_number] = Vehicle()
         # Find pixels with each car_number label value
         nonzero = (labels[0] == car_number).nonzero()
         # Identify x and y values of those pixels
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
+        # Might not need this line
+        VEHICLES[car_number].set_pixels(nonzerox, nonzeroy)
         # Define a bounding box based on min/max x and y
-        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        bbox = ((np.min(nonzerox), np.min(nonzeroy)), 
+                (np.max(nonzerox), np.max(nonzeroy)))
+        VEHICLES[car_number].append_xy(bbox)
         # Draw the box on the image
         cv2.rectangle(img, bbox[0], bbox[1], (0,0,255), 6)
     # Return the image
@@ -149,7 +158,8 @@ def channel_hist(img, nbins=32):
     bin_edges = c1_hist[1]
     bin_centers = (bin_edges[1:]  + bin_edges[0:len(bin_edges)-1])/2
     # Concatenate the histograms into a single feature vector
-    hist_features = np.concatenate((c1_hist[0], c2_hist[0], c3_hist[0]))
+    hist_features = \
+        np.concatenate((c1_hist[0], c2_hist[0], c3_hist[0]))
     #print(hist_features)
     # Return the individual histograms, bin_centers and feature vector
     #return hist_features, c1_hist, c2_hist, c3_hist, bin_centers
@@ -193,14 +203,16 @@ def get_hog_features(img, vis=False, feature_vec=False):
                 visualise=True)#, feature_vector=feature_vec)
     else:      
         features = hog(img, 
-                       orientations=ORIENT, 
-                       pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
-                       cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
-                       visualise=False)#, feature_vector=feature_vec)
+             orientations=ORIENT, 
+             pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
+             cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
+                       visualise=False)
     #if DEBUG: cv2.imwrite('./output_images/HOG_example.jpg', hog_image)
     return features, hog_image
 
-def extract_features(imgs, include_hog=True, include_spatial=True, include_color_hist=True,
+def extract_features(imgs, include_hog=True, 
+                           include_spatial=True, 
+                           include_color_hist=True,
                      gray_hog=False, #True,
                      spatial_size=(32, 32), hist_bins=16):
     # Create a list to append feature vectors to
@@ -229,8 +241,10 @@ def extract_features(imgs, include_hog=True, include_spatial=True, include_color
                 hog_channels = []
                 for channel in [0,1,2]:
                     feature_image = color_image[:,:,channel]
-                    hog_features, _ = get_hog_features(feature_image,
-                                             vis=DEBUG, feature_vec=False)
+                    hog_features, _ = \
+                        get_hog_features(feature_image,
+                                        vis=DEBUG,
+                                        feature_vec=False)
                     hog_channels.append(hog_features)
                 tot_hog_features = np.ravel(hog_channels)
 
@@ -347,7 +361,7 @@ def get_training_specs(cars, notcars):
     notcar_labels = np.zeros(len(notcar_features))
     return car_features, car_labels, notcar_features, notcar_labels
 
-def add_heat(bbox_list, heatmap=None):
+def add_heat(bbox_list, weight=1, heatmap=None):
     global HEATMAP
 
     if heatmap is None:
@@ -356,7 +370,7 @@ def add_heat(bbox_list, heatmap=None):
     # Iterate through list of bboxes
     for box in bbox_list:
         # Add += 1 for all pixels inside each bbox
-        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += weight
 
     return heatmap
 
@@ -365,14 +379,34 @@ def pipeline(img):
     img_size = img.shape[0:2]
     img_size = img_size[::-1] # Reverse order
 
-    # Try different window sizes
+    # First, look through previous detections. Then, try 
+    # different window sizes for new search.
     bbox_list = []
+    for car_num, car, in VEHICLES.iteritems():
+        bbox = car.get_avg_bbox()
+        sub_img = img[bbox[0][1]:bbox[1][1],
+                      bbox[0][0]:bbox[1][0]]
+        img_features = extract_features([sub_img])
+        scaled_X = SCALER.transform(
+                           np.array(img_features).reshape(1, -1))
+        prediction = MODEL.predict(scaled_X)
+        if prediction[0] == 1:
+            car.set_detection(1)
+            if car.is_valid():
+                bbox_list.append(bbox)
+        else:
+            car.set_detection(0)
+    # Let's value these more since they were previous detections
+    add_heat(bbox_list, weight=2)
+    
+    bbox_list = []   
+    # We still need to do a fresh search, but the above code
+    # should help boost previous detections in the heatmap
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
-    for size, overlap, y_start, y_stop in zip([256,512], # NOTE: Multiple of HOG cell size!
+    for size, overlap, y_start, y_stop in zip([128,256],
                                               [0.5]*2, 
                                               [360,380],
                                               [656]*2):
-        #if DEBUG: print("size=%s, overlap=%s, y_stop=%s" % (size, overlap, y_stop))
         window_list = slide_window(img, 
                           x_start_stop=[0, img_size[0]], 
                           y_start_stop=[y_start, y_stop], # S to L
@@ -381,24 +415,23 @@ def pipeline(img):
                           )
         # Here we have the macro windows that we will iterate over
         for window in window_list:
-            sub_img = img[window[0][1]:window[1][1], window[0][0]:window[1][0]]
+            sub_img = img[window[0][1]:window[1][1], 
+                          window[0][0]:window[1][0]]
             sub_img_size = sub_img.shape[0:2][::-1]
-            img_features = extract_features([sub_img], 
-                                              include_hog=True,
-                                              include_spatial=True, 
-                                              include_color_hist=True)
+            img_features = extract_features([sub_img])
             # Apply the scaler to X
-            scaled_X = SCALER.transform(np.array(img_features).reshape(1, -1))
+            scaled_X = SCALER.transform(
+                           np.array(img_features).reshape(1, -1))
             prediction = MODEL.predict(scaled_X)
             if prediction[0] == 1:
-            #if prediction == 1:
                 bbox_list.append(window)
                 print("Found car!") 
         
     add_heat(bbox_list)
     
-    # Run your pipeline on a video stream and create a heat map of recurring 
-    # detections frame by frame to reject outliers and follow detected vehicles.
+    # Create a heat map of recurring 
+    # detections frame by frame to reject 
+    # outliers and follow detected vehicles.
     labels = label(HEATMAP)
 
     if DEBUG: 
