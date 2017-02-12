@@ -32,11 +32,23 @@ class Vehicle():
         self.recent_hfitted = [] # height of last n fits
         self.besth = None # average height of last n fits
     
-    def get_avg_bbox(self):
-        half_height = self.besth/2
-        half_width  = self.bestw/2
-        return ((self.bestx - half_width, self.besty - half_height),
-                (self.bestx + half_width, self.besty + half_height))
+    def get_avg_bboxes(self):
+        """
+        Returns both a small and large bbox centered around the same
+        x, y coordinates
+        """
+        
+        # This coercion to int doesn't need to be percise
+        half_height = int(self.besth/2)
+        half_width  = int(self.bestw/2)
+        
+        # Remember: y grows downward
+        small = ((self.bestx - half_width, self.besty - half_height),
+                 (self.bestx + half_width, self.besty + half_height))
+        large = ((self.bestx - self.bestw, self.besty - self.besth),
+                 (self.bestx + self.bestw, self.besty + self.besth))
+                 
+        return (small, large)
     
     def set_detection(self, outcome):
         """
@@ -56,8 +68,6 @@ class Vehicle():
     def is_valid(self):
         # Basically, our confidence over time
         valid =  self.num_detections > self.num_nodetections
-        if valid:
-            print("Found previous detection!")
         return valid
     
     def set_pixels(self, nonzerox, nonzeroy):
@@ -73,9 +83,12 @@ class Vehicle():
         if len(self.recent_yfitted) > self.n:
             self.recent_yfitted = self.recent_yfitted[1:]
        
-        self.bestx = np.mean(self.recent_xfitted)
-        self.besty = np.mean(self.recent_yfitted)
+        # This coercion to int doesn't need to be percise
+        self.bestx = int(np.mean(self.recent_xfitted))
+        self.besty = int(np.mean(self.recent_yfitted))
         
+        # Absolute value to handle errors associated mainly
+        # with the inverted y values in cv2 images
         self.recent_wfitted.append(abs(bbox[1][0] - bbox[0][0]))
         self.recent_hfitted.append(abs(bbox[1][1] - bbox[0][1]))
         
@@ -83,7 +96,8 @@ class Vehicle():
             self.recent_wfitted = self.recent_wfitted[1:]
         if len(self.recent_hfitted) > self.n:
             self.recent_hfitted = self.recent_hfitted[1:]
-            
-        self.bestw = np.mean(self.recent_wfitted)
-        self.besth = np.mean(self.recent_hfitted)
+        
+        # This coercion to int doesn't need to be percise
+        self.bestw = int(np.mean(self.recent_wfitted))
+        self.besth = int(np.mean(self.recent_hfitted))
         

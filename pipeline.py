@@ -225,7 +225,8 @@ def extract_features(imgs, include_hog=True,
         else:
             image = file
        
-        t_size = 64 
+        t_size = 64
+        #print(image.shape)
         if image.shape[1] > t_size or image.shape[0] > t_size:
             image = cv2.resize(image, (t_size, t_size), 
                                fx=t_size/image.shape[1], fy=t_size/image.shape[0])
@@ -378,24 +379,28 @@ def pipeline(img):
     global HEATMAP, MODEL, SCALER
     img_size = img.shape[0:2]
     img_size = img_size[::-1] # Reverse order
+    
+    HEATMAP = np.zeros((720,1280)).astype(np.uint8)
 
     # First, look through previous detections. Then, try 
     # different window sizes for new search.
     bbox_list = []
     for car_num, car, in VEHICLES.iteritems():
-        bbox = car.get_avg_bbox()
-        sub_img = img[bbox[0][1]:bbox[1][1],
-                      bbox[0][0]:bbox[1][0]]
-        img_features = extract_features([sub_img])
-        scaled_X = SCALER.transform(
+        for bbox in car.get_avg_bboxes(): # Small, Large
+            sub_img = img[bbox[0][1]:bbox[1][1],
+                          bbox[0][0]:bbox[1][0]]
+            img_features = extract_features([sub_img])
+            scaled_X = SCALER.transform(
                            np.array(img_features).reshape(1, -1))
-        prediction = MODEL.predict(scaled_X)
-        if prediction[0] == 1:
-            car.set_detection(1)
-            if car.is_valid():
+            prediction = MODEL.predict(scaled_X)
+            if prediction[0] == 1:
+                car.set_detection(1)
                 bbox_list.append(bbox)
-        else:
-            car.set_detection(0)
+                print("Found previous detection!")
+                break # Don't search larger box (or just end after larger box)
+            else:
+                car.set_detection(0)
+                
     # Let's value these more since they were previous detections
     add_heat(bbox_list, weight=2)
     
@@ -403,7 +408,7 @@ def pipeline(img):
     # We still need to do a fresh search, but the above code
     # should help boost previous detections in the heatmap
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
-    for size, overlap, y_start, y_stop in zip([128,256],
+    for size, overlap, y_start, y_stop in zip([200,256],
                                               [0.5]*2, 
                                               [360,380],
                                               [656]*2):
