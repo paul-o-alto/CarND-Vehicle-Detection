@@ -12,7 +12,10 @@ The goals / steps of this project were the following:
 [image1]: ./output_images/car_not_car.png
 [image2]: ./output_images/HOG_example.jpg
 [image3]: ./output_images/sliding_windows.jpg
-[image4]: ./output_images/sliding_window.jpg
+[image41]: ./output_images/all_pos_bboxes5.jpg
+[image42]: ./output_images/all_pos_bboxes6.jpg
+[image43]: ./output_images/all_pos_bboxes7.jpg
+[image44]: ./output_images/all_pos_bboxes8.jpg
 [image5]: ./output_images/bboxes_and_heat.png
 [image6]: ./output_images/labels_map.png
 [image7]: ./output_images/output_bboxes.png
@@ -66,7 +69,10 @@ I settles on one single high level window size of 128. I have not found that lar
 
 Ultimately I searched on two scales using HLS 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided an ok result.  Here are some example images:
 
-![alt text][image4]
+![alt text][image41]
+![alt text][image42]
+![alt text][image43]
+![alt text][image44]
 ---
 
 ### Video Implementation
