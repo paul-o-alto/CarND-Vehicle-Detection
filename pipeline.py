@@ -6,6 +6,7 @@ import os
 import matplotlib.pyplot as plt
 import matplotlib.image  as mpimg
 from scipy.ndimage.measurements import label
+from skimage import data, color, exposure
 from skimage.feature import hog
 from sklearn.svm import LinearSVC
 from sklearn.externals import joblib
@@ -24,6 +25,7 @@ MODEL_FILE  = 'svm.pkl'
 SCALER_FILE = 'scaler.pkl' 
 HEATMAP = None
 HEATMAP_THRESH = 2
+FRAME_COUNT = 0
 VEHICLES = {}
 
 def region_of_interest(img, vertices):
@@ -184,8 +186,8 @@ def bin_spatial(img, size=(32, 32)):
 
 
 # Constants specific to hog
-ORIENT = 9 # Usually, 6 to 12
-PIX_PER_CELL = 8 #(8,8)
+ORIENT = 12 # Usually, 6 to 12
+PIX_PER_CELL = 8 #(16,16)
 CELL_PER_BLOCK = 2 #(2,2)
 # Will be 7x7x2x2x9 long
 
@@ -207,14 +209,37 @@ def get_hog_features(img, vis=False, feature_vec=False):
              pixels_per_cell=(PIX_PER_CELL, PIX_PER_CELL),
              cells_per_block=(CELL_PER_BLOCK, CELL_PER_BLOCK), 
                        visualise=False)
-    #if DEBUG: cv2.imwrite('./output_images/HOG_example.jpg', hog_image)
     return features, hog_image
+
+def save_hog_output(image, hog_image, channel):
+
+    fig, (ax1, ax2) = \
+        plt.subplots(1, 2, 
+                     figsize=(8, 4), sharex=True, sharey=True)
+
+    ax1.axis('off')
+    ax1.imshow(image, cmap=plt.cm.gray)
+    ax1.set_title('Input image')
+    ax1.set_adjustable('box-forced')
+
+    # Rescale histogram for better display
+    hog_image_rescaled = exposure.rescale_intensity(hog_image, in_range=(0, 0.02))
+
+    ax2.axis('off')
+    ax2.imshow(hog_image_rescaled, cmap=plt.cm.gray)
+    ax2.set_title('HOG (Channel %s)' % channel)
+    ax1.set_adjustable('box-forced')
+    #plt.show()
+
+    fig.savefig('./output_images/HOG_frame%s_ch%s example.png' 
+                % (FRAME_COUNT, channel))   # save the figure to file
+    plt.close(fig)
 
 def extract_features(imgs, include_hog=True, 
                            include_spatial=True, 
                            include_color_hist=True,
                      gray_hog=False, #True,
-                     spatial_size=(32, 32), hist_bins=16):
+                     spatial_size=(32, 32), hist_bins=32):
     # Create a list to append feature vectors to
     set_features = []
     # Iterate through the list of images
@@ -226,31 +251,36 @@ def extract_features(imgs, include_hog=True,
             image = file
        
         t_size = 64
-        #print(image.shape)
+        if image.shape[1] < t_size or image.shape[0] < t_size:
+            return None
         if image.shape[1] > t_size or image.shape[0] > t_size:
             image = cv2.resize(image, (t_size, t_size), 
                                fx=t_size/image.shape[1], fy=t_size/image.shape[0])
+                  
 
-        all_features = ([],)
+        all_features = ()
+        color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
         if include_hog:
             if gray_hog:
                 feature_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)        
                 tot_hog_features, _ = get_hog_features(feature_image, 
                                         vis=DEBUG, feature_vec=False)
             else:
-                color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
+                #color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
                 hog_channels = []
                 for channel in [0,1,2]:
                     feature_image = color_image[:,:,channel]
-                    hog_features, _ = \
+                    hog_features, hog_image = \
                         get_hog_features(feature_image,
-                                        vis=DEBUG,
-                                        feature_vec=False)
+                                         vis=DEBUG,
+                                         feature_vec=False)
+                    #if DEBUG:
+                    #    save_hog_output(feature_image, hog_image, channel)
                     hog_channels.append(hog_features)
                 tot_hog_features = np.ravel(hog_channels)
 
             all_features += (tot_hog_features,)
-        color_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
+        #color_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
         if include_spatial:
             # Apply bin_spatial() to get spatial color features
             if spatial_size: 
@@ -287,8 +317,16 @@ def data_look(car_list, notcar_list):
     # Read in a test image, either car or notcar
     example_img_car = cv2.imread(car_list[1])
     example_img_notcar = cv2.imread(notcar_list[1])
-    vis = np.concatenate((example_img_car, example_img_notcar), axis=1)
-    cv2.imwrite('./output_images/car_not_car.png', vis)
+    fig, (ax1,ax2) = plt.subplots(1, 2, figsize=(24, 9))
+    fig.tight_layout()
+    ax1.imshow(example_img_car)
+    ax1.set_title('Car', fontsize=24)
+    ax2.imshow(example_img_notcar)
+    ax2.set_title('Not Car', fontsize=24)
+    #vis = np.concatenate((example_img_car, example_img_notcar), axis=1)
+    #cv2.imwrite('./output_images/car_not_car.png', f) #vis)
+    fig.savefig('./output_images/car_not_car.png')   # save the figure to file
+    plt.close(fig) 
     # Define a key "image_shape" and store the test image shape 3-tuple
     data_dict["image_shape"] = example_img_car.shape
     # Define a key "data_type" and store the data type of the test image.
@@ -336,7 +374,7 @@ def train_svm(car_X, car_y, notcar_X, notcar_y):
     print('Test Accuracy of SVC = ', svc.score(X_test, y_test))
     # Check the prediction time for a single sample
     t=time.time()
-    prediction = svc.predict(X_test[0].reshape(1, -1))
+    prediction = svc.predict(X_test[0]) #.reshape(1, -1))
     t2 = time.time()
     print(t2-t, 'Seconds to predict with SVC')
 
@@ -376,42 +414,59 @@ def add_heat(bbox_list, weight=1, heatmap=None):
     return heatmap
 
 def pipeline(img):
-    global HEATMAP, MODEL, SCALER
+    global HEATMAP, FRAME_COUNT, MODEL, SCALER
     img_size = img.shape[0:2]
     img_size = img_size[::-1] # Reverse order
     
-    HEATMAP = np.zeros((720,1280)).astype(np.uint8)
+    if FRAME_COUNT % 6 == 0:
+        HEATMAP[(HEATMAP > HEATMAP_THRESH)] = 1
+    FRAME_COUNT += 1
 
     # First, look through previous detections. Then, try 
     # different window sizes for new search.
+    all_bboxes = []
     bbox_list = []
     for car_num, car, in VEHICLES.iteritems():
-        for bbox in car.get_avg_bboxes(): # Small, Large
+        avg_bboxes = car.get_avg_bboxes()
+        
+        if avg_bboxes: small_bbox = avg_bboxes[0]
+        else: small_bbox = None
+        
+        found = False
+        for bbox in avg_bboxes: # Small, Large
             sub_img = img[bbox[0][1]:bbox[1][1],
                           bbox[0][0]:bbox[1][0]]
+            print(sub_img.shape)
             img_features = extract_features([sub_img])
-            scaled_X = SCALER.transform(
-                           np.array(img_features).reshape(1, -1))
+            if img_features == None: continue
+            scaled_X = SCALER.transform(img_features)
+            #               np.array(img_features).reshape(1, -1))
             prediction = MODEL.predict(scaled_X)
             if prediction[0] == 1:
                 car.set_detection(1)
-                bbox_list.append(bbox)
-                print("Found previous detection!")
-                break # Don't search larger box (or just end after larger box)
+                # If we match on the larger image, clearly the smaller image
+                # is still valid (b/c it is centered on the same coordinates)
+                found = True
             else:
                 car.set_detection(0)
                 
+        if small_bbox and found:
+            bbox_list.append(small_bbox)
+            print("Found previous detection!")
+        if DEBUG:
+            all_bboxes.append(small_bbox)
+                
     # Let's value these more since they were previous detections
-    add_heat(bbox_list, weight=2)
+    add_heat(bbox_list)
     
     bbox_list = []   
     # We still need to do a fresh search, but the above code
     # should help boost previous detections in the heatmap
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
-    for size, overlap, y_start, y_stop in zip([200,256],
-                                              [0.5]*2, 
-                                              [360,380],
-                                              [656]*2):
+    for size, overlap, y_start, y_stop in zip([128],
+                                              [0.5]*1, 
+                                              [360],
+                                              [656]*1):
         window_list = slide_window(img, 
                           x_start_stop=[0, img_size[0]], 
                           y_start_stop=[y_start, y_stop], # S to L
@@ -425,25 +480,36 @@ def pipeline(img):
             sub_img_size = sub_img.shape[0:2][::-1]
             img_features = extract_features([sub_img])
             # Apply the scaler to X
-            scaled_X = SCALER.transform(
-                           np.array(img_features).reshape(1, -1))
+            scaled_X = SCALER.transform(img_features)
+            #               np.array(img_features).reshape(1, -1))
             prediction = MODEL.predict(scaled_X)
             if prediction[0] == 1:
                 bbox_list.append(window)
                 print("Found car!") 
-        
+            #if DEBUG:
+            #    all_bboxes.append(window)
+       
+    if DEBUG:
+        draw_img = draw_boxes(img, bbox_list)
+        cv2.imwrite('./output_images/bboxes%s.jpg' % FRAME_COUNT,
+                    draw_img)
+        #draw_img = draw_boxes(img, all_bboxes)
+        #cv2.imwrite('./output_images/sliding_windows.jpg', draw_img)
+
     add_heat(bbox_list)
-    
+
+    #HEATMAP[(HEATMAP < HEATMAP_THRESH)] = 0   
+ 
     # Create a heat map of recurring 
     # detections frame by frame to reject 
     # outliers and follow detected vehicles.
     labels = label(HEATMAP)
 
     if DEBUG: 
-        final_map = np.clip(HEATMAP - 2, 0, 255)
+        #final_map = np.clip(HEATMAP, 0, 255)
         #plt.imshow(final_map, cmap='hot'); plt.show()
         print(labels[1], 'cars found')
-        cv2.imwrite('./output_images/labels_map.png', labels[0])
+        #cv2.imwrite('./output_images/labels_map.png', labels[0])
 
     if labels[1] > 0:
         # Draw bounding boxes on a copy of the image
@@ -484,13 +550,29 @@ def main():
         images = glob.glob('test_images/test*.jpg')
         print("Looking at images %s" % images)
         for idx, fname in enumerate(images):
+            fig, (ax1, ax2) = plt.subplots(1, 2,
+                     figsize=(8, 4), sharex=True, sharey=True)
             image = cv2.imread(fname)
-            result = pipeline(image) 
+ 
+            result = pipeline(image)
+            ax1.axis('off')
+            ax1.imshow(image)
+            ax1.set_title('Original Image')
+ 
+            ax2.axis('off')
+            ax2.imshow(HEATMAP*10, cmap='hot')
+            ax2.set_title('Heatmap')
+            ax2.set_adjustable('box-forced')
+
+            fig.savefig('./output_images/img_and_heatmap_%s' % idx)
+            # save the figure to file
+            plt.close(fig)
+
             out_fn = './output_images/%s' % fname.split('/')[-1]
             print('Saving output to %s' % out_fn)
             cv2.imwrite(out_fn, result)
             # Need to zero out, because these are 'independent' images
-            PREV_HEATMAP = np.zeros_like(image[:,:,0]).astype(np.uint8) 
+            HEATMAP = np.zeros_like(image[:,:,0]).astype(np.uint8) 
             #DEBUG = False
    
         output_file = 'test_video_out.mp4'
