@@ -53,7 +53,7 @@ Here is an example using the `HLS` color space and HOG parameters of `orientatio
 
 ####2. Settling on the final choice of HOG parameters.
 
-I started with the default HOG parameters (orientation=9, pixels_per_cell=8x8, cells_per_block=2x2) . I mainly tweaked the orientation bin count. For pixels per cell, I started with 8x8 and moved up to 16x16. This greatly improved the performance compared to 8x8. I kept cells per block as 2x2 so I would get a decent amount of block normalization.
+I started with the default HOG parameters (orientation=9, pixels_per_cell=8x8, cells_per_block=2x2) . I mainly tweaked the orientation bin count. I varied it from 9 to 12. Values lower than this did not degrade performance too much. But going from 9 to 12 yielded some slight gains in performance For pixels per cell, I started with 8x8. Given the size of the input images, this value already proved to be optimal. I did vary this up to 16x16 without any improvement. I did not go below 8x8 as I believed this would be an insufficient amount of pixel values to be meaningful. I kept cells per block as 2x2 so I would get a decent amount of block normalization.
 
 ####3. Training a classifier using selected HOG features (and, optionally, color features).
 
@@ -63,7 +63,7 @@ I trained a linear SVM using HOG features extracted from an HLS image (on each c
 
 ####1. Implementing a sliding window search.  Scales to search and how much to overlap windows?
 
-I settles on one single high level window size of 128. I have not found that larger window sizes are helpful (more false positives). I take each window of 128x128 and I find smaller windows within this window (of size 64x64). I use the detections in these smaller windows as votes of confidence (to add to the heatmap). The amount I add to the heatmap is dictated by the number of confidence votes in each larger window from these smaller window detections. I do this in the `pipeline` function of `pipeline.py`. I extract features from the windows I recieve from the function `slide_window`.
+I settles on one single high level window size of 128. I did not find that larger window sizes were helpful (more false positives). I did multiple runs of a 128x128 window, starting at different starting heights (from half way down the image, to right above the hood of the car). The amount I add to the heatmap is dictated by whether the detection is a 'new' detection, or based on a previous detection. For a previously detected car, I add a weight of 2 to the heatmap, instead of a weight of 1 for sliding window detections. I do this in the `pipeline` function of `pipeline.py`. I extract features from the windows I recieve from the function `slide_window`.
 
 ![alt text][image3]
 
@@ -111,7 +111,7 @@ Here's an example result showing the heatmap from a series of frames of video, t
 
 ####1. Problems / issues faced in the implementation of this project.  Where will the pipeline likely fail?  What could be done to make it more robust?
 
-I really had an issue with false positives (for example, trees and highway dividers). I also had spurious true detections of cars on the opposite side of the freeway, but yet I sometimes had trouble consistently picking up cars on the same side of the road. It wasn't until I added the Vehicle class, and the cache of previous detections, that I finally saw smoother bounding boxes between frames. This use of suggested search locations was highly useful in finding the same vehicle again. 
+I really had an issue with false positives (for example, trees and highway dividers). I also had spurious true detections of cars on the opposite side of the freeway, but yet I sometimes had trouble consistently picking up cars on the same side of the road. It wasn't until I added the Vehicle class, and the cache of previous detections, that I finally saw smoother bounding boxes between frames. This use of suggested search locations was useful in finding the same vehicle again. False positives are still somewhat of an issue, but not nearly as much as they were before.
 
  
 
