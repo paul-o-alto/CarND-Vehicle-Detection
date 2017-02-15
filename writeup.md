@@ -16,7 +16,9 @@ The goals / steps of this project were the following:
 [image42]: ./output_images/all_pos_bboxes6.jpg
 [image43]: ./output_images/all_pos_bboxes7.jpg
 [image44]: ./output_images/all_pos_bboxes8.jpg
-[image5]: ./output_images/bboxes_and_heat.png
+[image51]: ./output_images/img_and_heatmap_0.png
+[image52]: ./output_images/img_and_heatmap_1.png
+[image53]: ./output_images/img_and_heatmap_2.png
 [image6]: ./output_images/labels_map.png
 [image7]: ./output_images/output_bboxes.png
 [image8]: ./output_images/HOG_frame1_ch0.png
@@ -89,11 +91,13 @@ This was more of a heuristic because the dictionary keys were based on the label
 
 Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
 
-### Here are six frames and their corresponding heatmaps:
+### Here are three frames and their corresponding heatmaps:
 
-![alt text][image5]
+![alt text][image51]
+![alt text][image52]
+![alt text][image53]
 
-### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all six frames:
+### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all three frames:
 ![alt text][image6]
 
 ### Here the resulting bounding boxes are drawn onto the last frame in the series:
