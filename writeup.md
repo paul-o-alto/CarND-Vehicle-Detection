@@ -91,16 +91,16 @@ This was more of a heuristic because the dictionary keys were based on the label
 
 Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
 
-### Here are three frames and their corresponding heatmaps:
+### Here are three example frames and their corresponding heatmaps:
 
 ![alt text][image51]
 ![alt text][image52]
 ![alt text][image53]
 
-### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all three frames:
+### Here is the output of `scipy.ndimage.measurements.label()` on an integrated heatmap after about 1 second (30 frames):
 ![alt text][image6]
 
-### Here the resulting bounding boxes are drawn onto the last frame in the series:
+### Here are the resulting bounding boxes drawn onto the last frame in the one second (30 frames) series:
 ![alt text][image7]
 
 
