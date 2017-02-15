@@ -20,7 +20,7 @@ The goals / steps of this project were the following:
 [image52]: ./output_images/img_and_heatmap_1.png
 [image53]: ./output_images/img_and_heatmap_2.png
 [image6]: ./output_images/labels_map.png
-[image7]: ./output_images/output_bboxes.png
+[image7]: ./output_images/output_bboxes.jpg
 [image8]: ./output_images/HOG_frame1_ch0.png
 [image9]: ./output_images/HOG_frame1_ch1.png
 [image10]: ./output_images/HOG_frame1_ch2.png
