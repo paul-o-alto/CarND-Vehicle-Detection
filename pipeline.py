@@ -24,9 +24,10 @@ SCALER = None
 MODEL_FILE  = 'svm.pkl'
 SCALER_FILE = 'scaler.pkl' 
 HEATMAP = None
-HEATMAP_THRESH = 2
+HEATMAP_THRESH = 3
 FRAME_COUNT = 0
 VEHICLES = {}
+REFRESH_RATE = 3 # After how many frames do we want to 'ground' the heatmap
 
 def region_of_interest(img, vertices):
     """
@@ -418,13 +419,28 @@ def pipeline(img):
     img_size = img.shape[0:2]
     img_size = img_size[::-1] # Reverse order
     
-    if FRAME_COUNT % 6 == 0:
-        HEATMAP[(HEATMAP > HEATMAP_THRESH)] = 1
+    if FRAME_COUNT % REFRESH_RATE == 0:
+        HEATMAP[(HEATMAP > HEATMAP_THRESH)] = HEATMAP_THRESH
+    if DEBUG and FRAME_COUNT % 3 == 0:
+        labels = label(HEATMAP)
+        tmp_map = labels[0]
+        for label_i in range(labels[1]):
+            tmp_map[(tmp_map == label_i)] = 50*label_i
+        final_map = np.clip(tmp_map, 0, 255)
+        plt.imshow(final_map, 
+                   cmap='hot'); plt.show()
+        print(labels[1], 'cars found')
+        cv2.imwrite('./output_images/labels_3f_%s.png'
+                    % FRAME_COUNT, final_map)
+
     FRAME_COUNT += 1
+
+    local_heatmap = np.zeros((720,1280)).astype(np.uint8)
 
     # First, look through previous detections. Then, try 
     # different window sizes for new search.
     all_bboxes = []
+    all_pos_bboxes = []
     bbox_list = []
     for car_num, car, in VEHICLES.iteritems():
         avg_bboxes = car.get_avg_bboxes()
@@ -452,21 +468,23 @@ def pipeline(img):
                 
         if small_bbox and found:
             bbox_list.append(small_bbox)
+            if DEBUG: all_pos_bboxes.append(small_bbox)
             print("Found previous detection!")
         if DEBUG:
             all_bboxes.append(small_bbox)
                 
-    # Let's value these more since they were previous detections
-    add_heat(bbox_list)
-    
+    # Value these more since they were previous detections?
+    #add_heat(bbox_list, heatmap=local_heatmap)
+    add_heat(bbox_list, weight=2, heatmap=HEATMAP)   
+ 
     bbox_list = []   
     # We still need to do a fresh search, but the above code
     # should help boost previous detections in the heatmap
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
-    for size, overlap, y_start, y_stop in zip([128],
-                                              [0.5]*1, 
-                                              [360],
-                                              [656]*1):
+    for size, overlap, y_start, y_stop in zip([128]*3,
+                                              [0.1]*3, 
+                                              [360,380,400],
+                                              [656]*3):
         window_list = slide_window(img, 
                           x_start_stop=[0, img_size[0]], 
                           y_start_stop=[y_start, y_stop], # S to L
@@ -485,31 +503,34 @@ def pipeline(img):
             prediction = MODEL.predict(scaled_X)
             if prediction[0] == 1:
                 bbox_list.append(window)
-                print("Found car!") 
+                print("Found car!")
+                if DEBUG: all_pos_bboxes.append(window) 
             #if DEBUG:
             #    all_bboxes.append(window)
        
-    if DEBUG:
+    if DEBUG and FRAME_COUNT % 3 == 0:
         draw_img = draw_boxes(img, bbox_list)
-        cv2.imwrite('./output_images/bboxes%s.jpg' % FRAME_COUNT,
+        cv2.imwrite('./output_images/bboxes_3f_%s.jpg' % FRAME_COUNT,
                     draw_img)
-        #draw_img = draw_boxes(img, all_bboxes)
-        #cv2.imwrite('./output_images/sliding_windows.jpg', draw_img)
+        draw_img = draw_boxes(img, all_pos_bboxes)
+        cv2.imwrite('./output_images/all_pos_bboxes%s.jpg' % FRAME_COUNT, 
+                    draw_img)
 
-    add_heat(bbox_list)
+    #add_heat(bbox_list, heatmap=local_heatmap)
 
-    #HEATMAP[(HEATMAP < HEATMAP_THRESH)] = 0   
- 
-    # Create a heat map of recurring 
-    # detections frame by frame to reject 
-    # outliers and follow detected vehicles.
+    #local_heatmap[(local_heatmap <= HEATMAP_THRESH)] = 0
+    #HEATMAP[(local_heatmap > HEATMAP_THRESH)] += HEATMAP_THRESH 
+    add_heat(bbox_list, heatmap=HEATMAP)
+
+    # We find cars based on the global heatmap, not the local one
     labels = label(HEATMAP)
 
     if DEBUG: 
-        #final_map = np.clip(HEATMAP, 0, 255)
-        #plt.imshow(final_map, cmap='hot'); plt.show()
+        final_map = np.clip(labels[0], 0, 255)
+        plt.imshow(final_map, cmap='hot')
         print(labels[1], 'cars found')
-        #cv2.imwrite('./output_images/labels_map.png', labels[0])
+        cv2.imwrite('./output_images/labels_map_%s.png' 
+                    % FRAME_COUNT, final_map)
 
     if labels[1] > 0:
         # Draw bounding boxes on a copy of the image
