@@ -8,7 +8,7 @@ import matplotlib.image  as mpimg
 from scipy.ndimage.measurements import label
 from skimage import data, color, exposure
 from skimage.feature import hog
-from sklearn.svm import LinearSVC
+from sklearn.svm import LinearSVC, SVC
 from sklearn.externals import joblib
 from sklearn.utils import shuffle
 from sklearn.preprocessing import StandardScaler
@@ -18,16 +18,22 @@ from moviepy.editor import VideoFileClip
 
 from vehicle import Vehicle
 
+SEARCH_LEFT = False
+SEARCH_RIGHT = True
+# These would be toggled on and off
+# based on lane finding
+
 DEBUG = not True
 MODEL = None
 SCALER = None
 MODEL_FILE  = 'svm.pkl'
 SCALER_FILE = 'scaler.pkl' 
 HEATMAP = None
-HEATMAP_THRESH = 3
+HEATMAP_THRESH = 8
 FRAME_COUNT = 0
 VEHICLES = {}
-REFRESH_RATE = 3 # After how many frames do we want to 'ground' the heatmap
+REFRESH_RATE = 15 # After how many frames do we want to 'ground' the heatmap
+DO_REFRESH = True
 
 def region_of_interest(img, vertices):
     """
@@ -77,11 +83,13 @@ def draw_labeled_bboxes(img, labels):
         # Might not need this line
         VEHICLES[car_number].set_pixels(nonzerox, nonzeroy)
         # Define a bounding box based on min/max x and y
-        bbox = ((np.min(nonzerox), np.min(nonzeroy)), 
-                (np.max(nonzerox), np.max(nonzeroy)))
-        VEHICLES[car_number].append_xy(bbox)
+        bbox_draw = ((np.min(nonzerox), np.min(nonzeroy)), 
+                     (np.max(nonzerox), np.max(nonzeroy)))
+        #bbox = ((np.min(nonzeroy), np.min(nonzerox)),
+        #        (np.max(nonzeroy), np.max(nonzerox)))
+        VEHICLES[car_number].append_xy(bbox_draw)
         # Draw the box on the image
-        cv2.rectangle(img, bbox[0], bbox[1], (0,0,255), 6)
+        cv2.rectangle(img, bbox_draw[0], bbox_draw[1], (0,0,255), 6)
     # Return the image
     return img
 
@@ -187,7 +195,7 @@ def bin_spatial(img, size=(32, 32)):
 
 
 # Constants specific to hog
-ORIENT = 12 # Usually, 6 to 12
+ORIENT = 9 # Usually, 6 to 12
 PIX_PER_CELL = 8 #(16,16)
 CELL_PER_BLOCK = 2 #(2,2)
 # Will be 7x7x2x2x9 long
@@ -237,10 +245,10 @@ def save_hog_output(image, hog_image, channel):
     plt.close(fig)
 
 def extract_features(imgs, include_hog=True, 
-                           include_spatial=True, 
-                           include_color_hist=True,
-                     gray_hog=False, #True,
-                     spatial_size=(32, 32), hist_bins=32):
+                           include_spatial=False, 
+                           include_color_hist=False,
+                     gray_hog=True,
+                     spatial_size=(16, 16), hist_bins=16):
     # Create a list to append feature vectors to
     set_features = []
     # Iterate through the list of images
@@ -364,7 +372,8 @@ def train_svm(car_X, car_y, notcar_X, notcar_y):
                      random_state=test_rs)
 
     # Use a linear SVC 
-    svc = LinearSVC()
+    #svc = LinearSVC()
+    svc = SVC()
     # Check the training time for the SVC
     t=time.time()
     svc.fit(X_train, y_train)
@@ -409,7 +418,7 @@ def add_heat(bbox_list, weight=1, heatmap=None):
 
     # Iterate through list of bboxes
     for box in bbox_list:
-        # Add += 1 for all pixels inside each bbox
+        print("Adding += 1 for all pixels inside %s", (box,))
         heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += weight
 
     return heatmap
@@ -419,8 +428,8 @@ def pipeline(img):
     img_size = img.shape[0:2]
     img_size = img_size[::-1] # Reverse order
     
-    if FRAME_COUNT % REFRESH_RATE == 0:
-        HEATMAP[(HEATMAP > HEATMAP_THRESH)] = HEATMAP_THRESH
+    if DO_REFRESH and FRAME_COUNT % REFRESH_RATE == 0:
+        HEATMAP[(HEATMAP > HEATMAP_THRESH)] = HEATMAP_THRESH - 1
     if DEBUG and FRAME_COUNT % 3 == 0:
         labels = label(HEATMAP)
         tmp_map = labels[0]
@@ -450,9 +459,11 @@ def pipeline(img):
         
         found = False
         for bbox in avg_bboxes: # Small, Large
-            sub_img = img[bbox[0][1]:bbox[1][1],
-                          bbox[0][0]:bbox[1][0]]
-            print(sub_img.shape)
+            y_start, x_start = bbox[0]
+            y_stop , x_stop  = bbox[1]
+            sub_img = img[y_start:y_stop,
+                          x_start:x_stop]
+            
             img_features = extract_features([sub_img])
             if img_features == None: continue
             scaled_X = SCALER.transform(img_features)
@@ -463,12 +474,14 @@ def pipeline(img):
                 # If we match on the larger image, clearly the smaller image
                 # is still valid (b/c it is centered on the same coordinates)
                 found = True
+                #bbox_list.append(bbox)
+                #break
             else:
                 car.set_detection(0)
                 
         if small_bbox and found:
             bbox_list.append(small_bbox)
-            if DEBUG: all_pos_bboxes.append(small_bbox)
+            #if DEBUG: all_pos_bboxes.append(small_bbox)
             print("Found previous detection!")
         if DEBUG:
             all_bboxes.append(small_bbox)
@@ -481,21 +494,30 @@ def pipeline(img):
     # We still need to do a fresh search, but the above code
     # should help boost previous detections in the heatmap
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
-    for size, overlap, y_start, y_stop in zip([128]*3,
-                                              [0.1]*3, 
-                                              [360,380,400],
-                                              [656]*3):
+    x_start = 0; x_stop = img_size[0]
+    if not SEARCH_LEFT:  x_start = img_size[0]/2
+    if not SEARCH_RIGHT: x_stop  = img_size[0]/2 
+    if x_start == x_stop: return None
+    print("Searching horizontally from %s to %s" % (x_start, x_stop))
+    for size, overlap, y_start, y_stop in zip([180]*2,
+                                              [0.5]*2, 
+                                              [360]*2,
+                                              [656]*2):
+        print("Searching vertically from %s to %s" % (y_start, y_stop,))
         window_list = slide_window(img, 
-                          x_start_stop=[0, img_size[0]], 
+                          x_start_stop=[x_start, x_stop], 
                           y_start_stop=[y_start, y_stop], # S to L
                           xy_window=(size,size), 
                           xy_overlap=(overlap, overlap)
                           )
         # Here we have the macro windows that we will iterate over
         for window in window_list:
-            sub_img = img[window[0][1]:window[1][1], 
-                          window[0][0]:window[1][0]]
+            #print("Searching window %s" % (window,))
+            y_start, x_start = window[0]
+            y_stop , x_stop  = window[1]
+            sub_img = img[x_start:x_stop, y_start:y_stop]
             sub_img_size = sub_img.shape[0:2][::-1]
+            
             img_features = extract_features([sub_img])
             # Apply the scaler to X
             scaled_X = SCALER.transform(img_features)
@@ -520,7 +542,7 @@ def pipeline(img):
 
     #local_heatmap[(local_heatmap <= HEATMAP_THRESH)] = 0
     #HEATMAP[(local_heatmap > HEATMAP_THRESH)] += HEATMAP_THRESH 
-    add_heat(bbox_list, heatmap=HEATMAP)
+    add_heat(bbox_list, weight=1, heatmap=HEATMAP)
 
     # We find cars based on the global heatmap, not the local one
     labels = label(HEATMAP)
@@ -560,7 +582,7 @@ def main():
     if not MODEL or not SCALER:
         car_X, car_y, notcar_X, notcar_y = \
             get_training_specs(cars, notcars)
-        print("Training a Linear SVM classifier")
+        print("Training an SVM classifier")
         MODEL = train_svm(car_X, car_y, notcar_X, notcar_y)
         joblib.dump(MODEL, MODEL_FILE)
         joblib.dump(SCALER, SCALER_FILE)
