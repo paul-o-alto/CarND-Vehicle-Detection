@@ -2,7 +2,7 @@
 
 The goals / steps of this project were the following:
 
-* Perform a Histogram of Oriented Gradients (HOG) feature extraction on a labeled training set of images and train a Linear SVM classifier
+* Perform a Histogram of Oriented Gradients (HOG) feature extraction on a labeled training set of images and train an SVM classifier
 * Apply a color transform and append binned color features, as well as histograms of color, to the HOG feature vector. 
 * Implement a sliding-window technique and use the trained classifier to search for vehicles in images.
 * Run a pipeline on a video stream and create a heat map of recurring detections frame by frame to reject outliers and follow detected vehicles.
@@ -57,7 +57,7 @@ I started with the default HOG parameters (orientation=9, pixels_per_cell=8x8, c
 
 ####3. Training a classifier using selected HOG features (and, optionally, color features).
 
-I trained a linear SVM using HOG features extracted from an HLS image (on each channel seperately). I also appended to those features a color histogram based on the HLS color space (converted from BGR) and a spatial histogram. These can be found in the functions `bin_spatial`, `channel_hist`, `get_hog_features`, and `extract_features` in the file called `pipeline.py`
+At first, I trained an SVM using HOG features extracted from an HLS image (on each channel seperately). I also appended to those features a color histogram based on the HLS color space (converted from BGR) and a spatial histogram. These can be found in the functions `bin_spatial`, `channel_hist`, `get_hog_features`, and `extract_features` in the file called `pipeline.py`. This implementation produced far too many false positives. I eventually decided to switch to a SVM with a 'rbf' kernel and I only used a grayscale version of the HOG features (no color histogram or spatial histogram included) and still got very good test accuracy (on both the test set and in the video, roughly 99%).
 
 ###Sliding Window Search
 
