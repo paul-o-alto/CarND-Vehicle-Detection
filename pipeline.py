@@ -29,11 +29,11 @@ SCALER = None
 MODEL_FILE  = 'svm.pkl'
 SCALER_FILE = 'scaler.pkl' 
 HEATMAP = None
-HEATMAP_THRESH = 8
+HEATMAP_THRESH = 2
 FRAME_COUNT = 0
 VEHICLES = {}
-REFRESH_RATE = 15 # After how many frames do we want to 'ground' the heatmap
-DO_REFRESH = True
+REFRESH_RATE = 60 # After how many frames do we want to 'ground' the heatmap
+DO_REFRESH = not True
 
 def region_of_interest(img, vertices):
     """
@@ -195,8 +195,8 @@ def bin_spatial(img, size=(32, 32)):
 
 
 # Constants specific to hog
-ORIENT = 9 # Usually, 6 to 12
-PIX_PER_CELL = 8 #(16,16)
+ORIENT = 6 # Usually, 6 to 12
+PIX_PER_CELL = 16 #(16,16)
 CELL_PER_BLOCK = 2 #(2,2)
 # Will be 7x7x2x2x9 long
 
@@ -268,7 +268,9 @@ def extract_features(imgs, include_hog=True,
                   
 
         all_features = ()
-        color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
+        #color_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
+        #color_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
+        color_image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
         if include_hog:
             if gray_hog:
                 feature_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)        
@@ -418,7 +420,7 @@ def add_heat(bbox_list, weight=1, heatmap=None):
 
     # Iterate through list of bboxes
     for box in bbox_list:
-        print("Adding += 1 for all pixels inside %s", (box,))
+        print("Adding += %s for all pixels inside %s" % (weight, box,))
         heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += weight
 
     return heatmap
@@ -429,7 +431,7 @@ def pipeline(img):
     img_size = img_size[::-1] # Reverse order
     
     if DO_REFRESH and FRAME_COUNT % REFRESH_RATE == 0:
-        HEATMAP[(HEATMAP > HEATMAP_THRESH)] = HEATMAP_THRESH - 1
+        HEATMAP[(HEATMAP >= HEATMAP_THRESH)] = HEATMAP_THRESH - 1
     if DEBUG and FRAME_COUNT % 3 == 0:
         labels = label(HEATMAP)
         tmp_map = labels[0]
@@ -444,7 +446,7 @@ def pipeline(img):
 
     FRAME_COUNT += 1
 
-    local_heatmap = np.zeros((720,1280)).astype(np.uint8)
+    HEATMAP = np.zeros((720,1280)).astype(np.uint8)
 
     # First, look through previous detections. Then, try 
     # different window sizes for new search.
@@ -454,8 +456,10 @@ def pipeline(img):
     for car_num, car, in VEHICLES.iteritems():
         avg_bboxes = car.get_avg_bboxes()
         
-        if avg_bboxes: small_bbox = avg_bboxes[0]
-        else: small_bbox = None
+        if len(avg_bboxes) == 2: 
+            s_bbox = avg_bboxes[0]
+        else: 
+            s_bbox = None
         
         found = False
         for bbox in avg_bboxes: # Small, Large
@@ -474,23 +478,20 @@ def pipeline(img):
                 # If we match on the larger image, clearly the smaller image
                 # is still valid (b/c it is centered on the same coordinates)
                 found = True
-                #bbox_list.append(bbox)
-                #break
+                bbox_list.append(s_bbox)
+                print("Found previous detection!")
             else:
                 car.set_detection(0)
+                if car.is_valid():
+                    bbox_list.append(s_bbox)
                 
-        if small_bbox and found:
-            bbox_list.append(small_bbox)
-            #if DEBUG: all_pos_bboxes.append(small_bbox)
-            print("Found previous detection!")
         if DEBUG:
-            all_bboxes.append(small_bbox)
+            all_bboxes.append(s_bbox)
                 
     # Value these more since they were previous detections?
     #add_heat(bbox_list, heatmap=local_heatmap)
     add_heat(bbox_list, weight=2, heatmap=HEATMAP)   
  
-    bbox_list = []   
     # We still need to do a fresh search, but the above code
     # should help boost previous detections in the heatmap
     # Example 64x64 image, 8x8 block, 7x7  x2x2x9
@@ -499,10 +500,10 @@ def pipeline(img):
     if not SEARCH_RIGHT: x_stop  = img_size[0]/2 
     if x_start == x_stop: return None
     print("Searching horizontally from %s to %s" % (x_start, x_stop))
-    for size, overlap, y_start, y_stop in zip([180]*2,
-                                              [0.5]*2, 
-                                              [360]*2,
-                                              [656]*2):
+    for size, overlap, y_start, y_stop in zip([100,200,300],
+                                              [0.5]*3, 
+                                              [360,380,400],
+                                              [656]*3):
         print("Searching vertically from %s to %s" % (y_start, y_stop,))
         window_list = slide_window(img, 
                           x_start_stop=[x_start, x_stop], 
@@ -510,7 +511,7 @@ def pipeline(img):
                           xy_window=(size,size), 
                           xy_overlap=(overlap, overlap)
                           )
-        # Here we have the macro windows that we will iterate over
+        bbox_list = []; weight = 1 # Make heatmap more 'peaky'
         for window in window_list:
             #print("Searching window %s" % (window,))
             y_start, x_start = window[0]
@@ -529,7 +530,9 @@ def pipeline(img):
                 if DEBUG: all_pos_bboxes.append(window) 
             #if DEBUG:
             #    all_bboxes.append(window)
-       
+        add_heat(bbox_list, weight=weight, heatmap=HEATMAP)
+          
+      
     if DEBUG and FRAME_COUNT % 3 == 0:
         draw_img = draw_boxes(img, bbox_list)
         cv2.imwrite('./output_images/bboxes_3f_%s.jpg' % FRAME_COUNT,
@@ -538,11 +541,7 @@ def pipeline(img):
         cv2.imwrite('./output_images/all_pos_bboxes%s.jpg' % FRAME_COUNT, 
                     draw_img)
 
-    #add_heat(bbox_list, heatmap=local_heatmap)
-
-    #local_heatmap[(local_heatmap <= HEATMAP_THRESH)] = 0
-    #HEATMAP[(local_heatmap > HEATMAP_THRESH)] += HEATMAP_THRESH 
-    add_heat(bbox_list, weight=1, heatmap=HEATMAP)
+    HEATMAP[(HEATMAP < HEATMAP_THRESH)] = 0
 
     # We find cars based on the global heatmap, not the local one
     labels = label(HEATMAP)
@@ -560,7 +559,7 @@ def pipeline(img):
     else:
         out_img = img
 
-    HEATMAP[(HEATMAP <= HEATMAP_THRESH)] = 0
+    #HEATMAP[(HEATMAP < HEATMAP_THRESH)] = 0
 
     return out_img 
 
