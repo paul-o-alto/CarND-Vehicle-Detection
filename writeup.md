@@ -53,7 +53,7 @@ Here is an example using the `HLS` color space and HOG parameters of `orientatio
 
 ####2. Settling on the final choice of HOG parameters.
 
-I started with the default HOG parameters (orientation=9, pixels_per_cell=8x8, cells_per_block=2x2) . I mainly tweaked the orientation bin count. I varied it from 9 to 12. Values lower than this did not degrade performance too much. But going from 9 to 12 yielded some slight gains in performance For pixels per cell, I started with 8x8. Given the size of the input images, this value already proved to be optimal. I did vary this up to 16x16 without any improvement. I did not go below 8x8 as I believed this would be an insufficient amount of pixel values to be meaningful. I kept cells per block as 2x2 so I would get a decent amount of block normalization.
+I started with the default HOG parameters (orientation=9, pixels_per_cell=8x8, cells_per_block=2x2) . I mainly tweaked the orientation bin count. I varied it from 6 to 12. Going down to 6 yielded some slight gains in performance (speed-wise) without too many false positives. For pixels per cell, I started with 8x8. Given the size of the input images, this value seemed to be optimal. But, I did vary this up to 16x16 and saw no degradation in detections and actually perhaps a slight improvement. I did not go below 8x8 as I believed this would be an insufficient amount of pixel values to be meaningful. I kept cells per block as 2x2 so I would get a decent amount of block normalization.
 
 ####3. Training a classifier using selected HOG features (and, optionally, color features).
 
@@ -63,7 +63,7 @@ At first, I trained an SVM using HOG features extracted from an HLS image (on ea
 
 ####1. Implementing a sliding window search.  Scales to search and how much to overlap windows?
 
-I settles on one single high level window size of 128. I did not find that larger window sizes were helpful (more false positives). I did multiple runs of a 128x128 window, starting at different starting heights (from half way down the image, to right above the hood of the car). The amount I add to the heatmap is dictated by whether the detection is a 'new' detection, or based on a previous detection. For a previously detected car, I add a weight of 2 to the heatmap, instead of a weight of 1 for sliding window detections. I do this in the `pipeline` function of `pipeline.py`. I extract features from the windows I recieve from the function `slide_window`.
+I settles on three high level window size of 100, 200, and 300. I did not find that larger window sizes were helpful (more false positives). I did multiple runs comprised of these window sizes, starting at different starting heights (from half way down the image, to right above the hood of the car). The amount I add to the heatmap is dictated by whether the detection is a 'new' detection, or based on a previous detection. For a previously detected car, I add a weight of 2 to the heatmap, instead of a weight of 1 for sliding window detections. I do this in the `pipeline` function of `pipeline.py`. I extract features from the windows I recieve from the function `slide_window`.
 
 ![alt text][image3]
 
